@@ -1,5 +1,6 @@
 {
   "name": "PromptVision AI",
   "description": "An advanced AI-powered tool that analyzes uploaded images to generate detailed text prompts for Midjourney, DALL-E, and other image generation models, capturing style, pose, and atmosphere.",
-  "requestFramePermissions": []
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

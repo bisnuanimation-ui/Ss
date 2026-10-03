@@ -13,11 +13,7 @@ import {
   Lock,
   Eye,
   EyeOff,
-  AlertTriangle,
-  Key,
-  ExternalLink,
-  Check,
-  Cpu
+  AlertTriangle
 } from 'lucide-react';
 import Header from './components/Header';
 import ImagePreview from './components/ImagePreview';
@@ -41,32 +37,12 @@ const App: React.FC = () => {
   const [showGuide, setShowGuide] = useState(false);
   const [showAdminPanel, setShowAdminPanel] = useState(false);
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
-  const [showApiKeyModal, setShowApiKeyModal] = useState(false);
 
   // Admin password login states
   const [showAdminLoginModal, setShowAdminLoginModal] = useState(false);
   const [adminPassword, setAdminPassword] = useState('');
   const [adminPasswordError, setAdminPasswordError] = useState(false);
   const [showPasswordChar, setShowPasswordChar] = useState(false);
-
-  // Active user API Provider ('gemini' | 'deepseek')
-  const [activeProvider, setActiveProvider] = useState<'gemini' | 'deepseek'>(() => {
-    return (localStorage.getItem('promptvision_active_provider') as 'gemini' | 'deepseek') || 'gemini';
-  });
-
-  // User personal Gemini API Key
-  const [customApiKey, setCustomApiKey] = useState<string>(() => {
-    return localStorage.getItem('promptvision_custom_api_key') || '';
-  });
-
-  // User personal DeepSeek/OpenRouter API Key
-  const [deepseekApiKey, setDeepseekApiKey] = useState<string>(() => {
-    return localStorage.getItem('promptvision_deepseek_api_key') || '';
-  });
-
-  const [tempGeminiKey, setTempGeminiKey] = useState<string>(customApiKey);
-  const [tempDeepseekKey, setTempDeepseekKey] = useState<string>(deepseekApiKey);
-  const [saveSuccess, setSaveSuccess] = useState(false);
 
   // Local storage history state
   const [history, setHistory] = useState<any[]>(() => {
@@ -157,11 +133,8 @@ const App: React.FC = () => {
   const handleAnalyze = async () => {
     if (!state.image || !state.imageMimeType) return;
 
-    // If user has saved a personal key, they get UNLIMITED generations!
-    const hasPersonalKey = !!customApiKey || !!deepseekApiKey;
-
-    // Enforce 3 free trials only for guests without personal keys
-    if (!isAdminSession && !hasPersonalKey && guestTrials >= 3) {
+    // Enforce 3 free trials for guests
+    if (!isAdminSession && guestTrials >= 3) {
       setShowUpgradeModal(true);
       return;
     }
@@ -171,8 +144,8 @@ const App: React.FC = () => {
     try {
       let result: AnalysisResult;
 
-      // Select personal key if entered, falling back to central global key setup
-      const finalApiKey = customApiKey || deepseekApiKey || globalConfig?.apiKey || (import.meta as any).env?.VITE_GEMINI_API_KEY;
+      // Global central key configured strictly by Admin
+      const finalApiKey = globalConfig?.apiKey || (import.meta as any).env?.VITE_GEMINI_API_KEY;
 
       if (!finalApiKey) {
         throw new Error('API_KEY_MISSING');
@@ -182,13 +155,13 @@ const App: React.FC = () => {
         state.image, 
         state.imageMimeType, 
         finalApiKey, 
-        customApiKey || (import.meta as any).env?.VITE_GEMINI_API_KEY
+        (import.meta as any).env?.VITE_GEMINI_API_KEY
       );
 
       setState(prev => ({ ...prev, result, isAnalyzing: false }));
 
-      // Save to guest local trials if not in Admin Session and doesn't have a personal key
-      if (!isAdminSession && !hasPersonalKey) {
+      // Save to guest local trials if not in Admin Session
+      if (!isAdminSession) {
         const nextTrials = guestTrials + 1;
         setGuestTrials(nextTrials);
         localStorage.setItem('promptvision_guest_trials', String(nextTrials));
@@ -212,7 +185,7 @@ const App: React.FC = () => {
       let errorMessage = 'বিশ্লেষণ ব্যর্থ হয়েছে। অনুগ্রহ করে আবার চেষ্টা করুন (Analysis failed).';
 
       if (err.message === 'API_KEY_MISSING') {
-        errorMessage = 'সেন্ট্রাল এপিআই কী অনুপস্থিত: অনুগ্রহ করে অ্যাডমিন প্যানেলে বা নিজের পার্সোনাল এপিআই কী সেট করুন।';
+        errorMessage = 'সেন্ট্রাল এপিআই কী অনুপস্থিত: অনুগ্রহ করে এডমিনকে প্যানেলে একটি এপিআই কী সেট করতে বলুন।';
       } else if (err.message?.includes('QUOTA_EXCEEDED') || err.message?.includes('RESOURCE_EXHAUSTED') || err.status === 429) {
         errorMessage = 'কোটা শেষ হয়েছে (Quota Exceeded): অনুগ্রহ করে কিছুক্ষণ অপেক্ষা করে আবার চেষ্টা করুন।';
       } else if (err.message?.includes('API_KEY_INVALID')) {
@@ -248,36 +221,6 @@ const App: React.FC = () => {
     localStorage.removeItem('promptvision_admin_session');
   };
 
-  const handleSaveApiKeySettings = () => {
-    const trimmedGemini = tempGeminiKey.trim();
-    const trimmedDeepseek = tempDeepseekKey.trim();
-
-    setCustomApiKey(trimmedGemini);
-    setDeepseekApiKey(trimmedDeepseek);
-
-    localStorage.setItem('promptvision_custom_api_key', trimmedGemini);
-    localStorage.setItem('promptvision_deepseek_api_key', trimmedDeepseek);
-    localStorage.setItem('promptvision_active_provider', activeProvider);
-
-    setSaveSuccess(true);
-    setTimeout(() => {
-      setSaveSuccess(false);
-      setShowApiKeyModal(false);
-    }, 1500);
-  };
-
-  const handleClearGeminiKey = () => {
-    setCustomApiKey('');
-    setTempGeminiKey('');
-    localStorage.removeItem('promptvision_custom_api_key');
-  };
-
-  const handleClearDeepseekKey = () => {
-    setDeepseekApiKey('');
-    setTempDeepseekKey('');
-    localStorage.removeItem('promptvision_deepseek_api_key');
-  };
-
   const handleSelectHistoryItem = (itemResult: AnalysisResult, thumb: string) => {
     setState({
       image: thumb || null,
@@ -290,7 +233,6 @@ const App: React.FC = () => {
   };
 
   const isReady = !!state.image && !state.isAnalyzing;
-  const hasPersonalKey = !!customApiKey || !!deepseekApiKey;
 
   return (
     <div className="min-h-screen bg-[#070709] text-neutral-100 flex flex-col font-sans selection:bg-blue-500/30">
@@ -319,27 +261,6 @@ const App: React.FC = () => {
                 <span>No Central API Configured</span>
               </div>
             )}
-
-            {/* Custom Model / API Key Button for Everyone */}
-            <button
-              onClick={() => {
-                setTempGeminiKey(customApiKey);
-                setTempDeepseekKey(deepseekApiKey);
-                setShowApiKeyModal(true);
-              }}
-              className={`px-3.5 py-1.5 rounded-xl border text-xs font-semibold flex items-center gap-1.5 transition-all ${
-                hasPersonalKey
-                  ? 'bg-gradient-to-r from-emerald-500/10 to-cyan-500/10 text-emerald-400 border-emerald-500/30 shadow-[0_0_15px_rgba(16,185,129,0.15)] animate-pulse' 
-                  : 'bg-white/5 hover:bg-white/10 border-white/10 text-neutral-300 hover:text-white'
-              }`}
-            >
-              <Key className="w-3.5 h-3.5 text-emerald-400" />
-              <span>
-                {hasPersonalKey 
-                  ? `My Key Active (Unlimited)` 
-                  : `🔑 API Key যোগ করুন`}
-              </span>
-            </button>
 
             {/* Admin Panel Button */}
             {isAdminSession ? (
@@ -411,10 +332,6 @@ const App: React.FC = () => {
               {isAdminSession ? (
                 <div className="text-xs text-amber-400 font-bold bg-amber-500/10 border border-amber-500/20 px-4 py-2 rounded-2xl animate-pulse">
                   🏆 Admin Session (Unlimited Trials Enabled)
-                </div>
-              ) : hasPersonalKey ? (
-                <div className="text-xs text-emerald-400 font-bold bg-emerald-500/10 border border-emerald-500/20 px-4 py-2 rounded-2xl">
-                  🚀 Your Personal API Key Connected (Unlimited Generations Sচল)
                 </div>
               ) : (
                 <div className="text-xs text-neutral-400 bg-white/5 border border-white/10 px-4 py-2 rounded-2xl">
@@ -593,162 +510,6 @@ const App: React.FC = () => {
         </div>
       )}
 
-      {/* User Personal Model & API Key Settings Modal */}
-      {showApiKeyModal && (
-        <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4">
-          <motion.div 
-            initial={{ scale: 0.95, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
-            className="bg-neutral-900 border border-white/10 rounded-3xl max-w-xl w-full p-6 shadow-2xl relative overflow-hidden"
-          >
-            <div className="absolute top-0 right-0 w-48 h-48 bg-emerald-500/5 rounded-full blur-3xl pointer-events-none" />
-
-            <div className="flex items-center justify-between mb-4 border-b border-white/5 pb-4">
-              <div className="flex items-center gap-2">
-                <Key className="w-5 h-5 text-emerald-400 animate-pulse" />
-                <h3 className="font-bold text-base text-white">আমার পার্সোনাল API Key (আনলিমিটেড জেনারেশন)</h3>
-              </div>
-              <button
-                onClick={() => setShowApiKeyModal(false)}
-                className="p-1 rounded-lg text-neutral-400 hover:text-white"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            <div className="space-y-5">
-              {/* Active Provider Selector */}
-              <div className="space-y-2">
-                <span className="text-xs font-bold text-neutral-400 block uppercase tracking-wider">
-                  Active AI Model (সক্রিয় এপিআই মডেল নির্বাচন করুন):
-                </span>
-                <div className="grid grid-cols-2 gap-3">
-                  <button
-                    onClick={() => setActiveProvider('gemini')}
-                    className={`p-4 rounded-2xl border text-left transition-all ${
-                      activeProvider === 'gemini'
-                        ? 'bg-blue-500/10 border-blue-500 text-white shadow-lg shadow-blue-500/10'
-                        : 'bg-white/5 border-white/5 text-neutral-400 hover:text-white'
-                    }`}
-                  >
-                    <div className="font-bold text-xs flex items-center gap-1.5 mb-1 text-blue-400">
-                      <Sparkles className="w-3.5 h-3.5" />
-                      <span>Google Gemini</span>
-                    </div>
-                    <p className="text-[10px] text-neutral-400 leading-relaxed">
-                      Gemini 1.5/3.8 Flash মডেল। আল্ট্রা-ফাস্ট ও মাল্টিমোডাল ছবি অ্যানালাইসিস।
-                    </p>
-                  </button>
-
-                  <button
-                    onClick={() => setActiveProvider('deepseek')}
-                    className={`p-4 rounded-2xl border text-left transition-all ${
-                      activeProvider === 'deepseek'
-                        ? 'bg-cyan-500/10 border-cyan-500 text-white shadow-lg shadow-cyan-500/10'
-                        : 'bg-white/5 border-white/5 text-neutral-400 hover:text-white'
-                    }`}
-                  >
-                    <div className="font-bold text-xs flex items-center gap-1.5 mb-1 text-cyan-400">
-                      <Cpu className="w-3.5 h-3.5" />
-                      <span>deepseek-chat</span>
-                    </div>
-                    <p className="text-[10px] text-neutral-400 leading-relaxed">
-                      DeepSeek-Chat (OpenRouter / DeepSeek API)। বুদ্ধিমত্তা ও প্রম্পট রাইটিং মাস্টার।
-                    </p>
-                  </button>
-                </div>
-              </div>
-
-              {/* Gemini Section */}
-              <div className="space-y-3 p-4 rounded-2xl bg-white/5 border border-white/5">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-blue-400 flex items-center gap-1">
-                    <Sparkles className="w-3.5 h-3.5" /> Google Gemini API Key:
-                  </span>
-                  <a
-                    href="https://aistudio.google.com/"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-[10px] text-neutral-400 hover:text-blue-400 flex items-center gap-1 font-bold underline"
-                  >
-                    <span>ফ্রি লিঙ্ক</span>
-                    <ExternalLink className="w-2.5 h-2.5" />
-                  </a>
-                </div>
-                <div className="flex gap-2">
-                  <input
-                    type="password"
-                    placeholder="AIzaSy... (Gemini Key)"
-                    value={tempGeminiKey}
-                    onChange={(e) => setTempGeminiKey(e.target.value)}
-                    className="flex-1 bg-black/50 border border-white/10 rounded-xl px-3 py-2 text-xs text-white font-mono placeholder:text-neutral-700 focus:outline-none focus:border-blue-500 transition-colors"
-                  />
-                  {customApiKey && (
-                    <button
-                      onClick={handleClearGeminiKey}
-                      className="px-3 py-2 rounded-xl bg-red-500/10 hover:bg-red-500/25 text-red-400 text-[10px] font-medium transition-colors"
-                    >
-                      Clear
-                    </button>
-                  )}
-                </div>
-              </div>
-
-              {/* DeepSeek Section */}
-              <div className="space-y-3 p-4 rounded-2xl bg-white/5 border border-white/5">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-cyan-400 flex items-center gap-1">
-                    <Cpu className="w-3.5 h-3.5" /> DeepSeek (OpenRouter) Key:
-                  </span>
-                  <a
-                    href="https://openrouter.ai/"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-[10px] text-neutral-400 hover:text-cyan-400 flex items-center gap-1 font-bold underline"
-                  >
-                    <span>ফ্রি OpenRouter লিঙ্ক</span>
-                    <ExternalLink className="w-2.5 h-2.5" />
-                  </a>
-                </div>
-                <div className="flex gap-2">
-                  <input
-                    type="password"
-                    placeholder="sk-or-... / sk-api... (DeepSeek / OpenRouter)"
-                    value={tempDeepseekKey}
-                    onChange={(e) => setTempDeepseekKey(e.target.value)}
-                    className="flex-1 bg-black/50 border border-white/10 rounded-xl px-3 py-2 text-xs text-white font-mono placeholder:text-neutral-700 focus:outline-none focus:border-cyan-500 transition-colors"
-                  />
-                  {deepseekApiKey && (
-                    <button
-                      onClick={handleClearDeepseekKey}
-                      className="px-3 py-2 rounded-xl bg-red-500/10 hover:bg-red-500/25 text-red-400 text-[10px] font-medium transition-colors"
-                    >
-                      Clear
-                    </button>
-                  )}
-                </div>
-              </div>
-
-              {saveSuccess && (
-                <div className="text-xs text-emerald-400 font-semibold flex items-center gap-1.5 justify-center py-1">
-                  <Check className="w-4 h-4" />
-                  <span>আপনার পার্সোনাল এপিআই কী সফলভাবে সেভ হয়েছে!</span>
-                </div>
-              )}
-
-              <div className="flex gap-2 pt-2 border-t border-white/5">
-                <button
-                  onClick={handleSaveApiKeySettings}
-                  className="flex-1 py-3 rounded-xl bg-gradient-to-r from-emerald-600 to-cyan-600 hover:brightness-110 text-white font-bold text-xs uppercase tracking-wider transition-all"
-                >
-                  সেভ ও সক্রিয় করুন (Save & Activate)
-                </button>
-              </div>
-            </div>
-          </motion.div>
-        </div>
-      )}
-
       {/* Premium Upgrade Block Modal Overlay */}
       {showUpgradeModal && (
         <div className="fixed inset-0 z-50 bg-black/90 backdrop-blur-md flex items-center justify-center p-4">
@@ -765,22 +526,13 @@ const App: React.FC = () => {
 
             <h3 className="text-xl font-bold text-white tracking-tight">আপনার ৩টি ফ্রি ট্রায়াল লিমিট শেষ!</h3>
             <p className="text-xs text-neutral-300 mt-2.5 leading-relaxed">
-              আজকের ফ্রি ছবি বিশ্লেষণের লিমিট শেষ হয়ে গেছে। আনলিমিটেড ব্যবহার করতে নিচের ২টি উপায়ের যেকোনো ১টি বেছে নিন:
+              আজকের ফ্রি ছবি বিশ্লেষণের লিমিট শেষ হয়ে গেছে। আনলিমিটেড ব্যবহার এবং হাই-এন্ড প্রম্পট সার্ভিস চালু রাখতে আজই মাত্র **২০ টাকা** দিয়ে প্রিমিয়াম মেম্বারশিপ কিনুন!
             </p>
 
-            <div className="my-4 p-4 rounded-2xl bg-white/5 border border-white/10 space-y-3 text-left">
-              <div>
-                <span className="text-[11px] font-bold text-amber-400 block mb-1">উপায় ১: আনলিমিটেড প্রিমিয়াম মেম্বারশিপ কিনুন</span>
-                <p className="text-[10px] text-neutral-300 leading-relaxed">
-                  মাত্র **২০ টাকা** দিয়ে আনলিমিটেড সার্ভিস চালু করতে নিচের বাটনে ক্লিক করে আমাদের হোয়াটসঅ্যাপ নম্বরে (**01332756124**) যোগাযোগ করুন।
-                </p>
-              </div>
-              <div className="border-t border-white/5 pt-2.5">
-                <span className="text-[11px] font-bold text-emerald-400 block mb-1">উপায় ২: নিজের API Key ব্যবহার করুন (১০০% ফ্রি)</span>
-                <p className="text-[10px] text-neutral-300 leading-relaxed">
-                  ওপরের ডান কোণে **"🔑 API Key যোগ করুন"** বাটনে ক্লিক করে আপনার নিজের Gemini বা DeepSeek API কী বসিয়ে সম্পূর্ণ ফ্রিতে আনলিমিটেড ছবি অ্যানালাইসিস করুন!
-                </p>
-              </div>
+            <div className="my-5 p-4 rounded-2xl bg-white/5 border border-white/10 space-y-1.5 text-left">
+              <p className="text-xs font-semibold text-neutral-300">যোগাযোগের নম্বর (WhatsApp):</p>
+              <p className="text-base font-extrabold text-amber-400 tracking-wider">01332756124</p>
+              <p className="text-[10px] text-neutral-500 leading-relaxed">* যোগাযোগ করার পর আপনার ব্রাউজারে আনলিমিটেড সার্ভিস সচল করার গোপন পিন নম্বর প্রদান করা হবে।</p>
             </div>
 
             <div className="space-y-3">
@@ -795,18 +547,8 @@ const App: React.FC = () => {
               </a>
 
               <button
-                onClick={() => {
-                  setShowUpgradeModal(false);
-                  setShowApiKeyModal(true);
-                }}
-                className="w-full py-2.5 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 text-xs font-bold transition-all"
-              >
-                নিজের API Key বসাবো (Enter My API Key)
-              </button>
-
-              <button
                 onClick={() => setShowUpgradeModal(false)}
-                className="w-full py-2 rounded-xl bg-white/5 hover:bg-white/10 text-neutral-400 hover:text-white text-[11px] font-medium transition-colors"
+                className="w-full py-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-neutral-400 hover:text-white text-xs font-medium transition-colors"
               >
                 বন্ধ করুন (Close)
               </button>
