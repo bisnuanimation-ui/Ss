@@ -1,0 +1,45 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 0. Global Safety Net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Helper Functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    // Test document for connection checks
+    match /test/{docId} {
+      allow read: if true;
+    }
+
+    // Admins Collection (Read only for authenticated users)
+    match /admins/{uid} {
+      allow read: if isSignedIn();
+      allow write: if false;
+    }
+
+    // Users Collection
+    match /users/{uid} {
+      allow get: if isOwner(uid);
+      allow list: if isOwner(uid);
+      allow create, update: if isOwner(uid);
+      allow delete: if false;
+
+      // Analyses Subcollection
+      match /analyses/{analysisId} {
+        allow read: if isOwner(uid);
+        allow create: if isOwner(uid);
+        allow update: if isOwner(uid);
+        allow delete: if isOwner(uid);
+      }
+    }
+  }
+}

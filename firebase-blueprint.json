@@ -1,0 +1,55 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "A user of the application.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "description": "The Firebase Auth UID." },
+        "email": { "type": "string", "format": "email", "description": "The user's email address." },
+        "displayName": { "type": "string", "description": "The user's display name." },
+        "photoURL": { "type": "string", "description": "The user's profile photo URL." },
+        "role": { "type": "string", "enum": ["user", "admin"], "description": "The user's role." },
+        "subscription": {
+          "type": "object",
+          "properties": {
+            "status": { "type": "string", "enum": ["free", "premium"] },
+            "expiresAt": { "type": "integer", "description": "Timestamp in ms" },
+            "token": { "type": "string", "description": "User specific access token" }
+          }
+        }
+      },
+      "required": ["uid", "email"]
+    },
+    "Analysis": {
+      "title": "Analysis",
+      "description": "An image analysis result.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "description": "The user's UID." },
+        "cameraAngle": { "type": "string" },
+        "backgroundSetting": { "type": "string" },
+        "characterPose": { "type": "string" },
+        "emotionalVibe": { "type": "string" },
+        "locationDetails": { "type": "string" },
+        "masterPrompt": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "masterPrompt", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/users/{uid}": {
+      "schema": { "$ref": "User" },
+      "description": "User profiles."
+    },
+    "/admins/{uid}": {
+      "schema": { "type": "object", "properties": { "email": { "type": "string" } } },
+      "description": "Admin list for role check."
+    },
+    "/users/{uid}/analyses/{analysisId}": {
+      "schema": { "$ref": "Analysis" },
+      "description": "User image analyses."
+    }
+  }
+}
