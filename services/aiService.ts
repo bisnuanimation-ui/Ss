@@ -5,26 +5,18 @@ export const autoDetectAndAnalyze = async (
   base64Image: string,
   mimeType: string,
   apiKey: string,
-  customModelName?: string,
-  customEndpoint?: string,
   backupGeminiApiKey?: string
 ): Promise<AnalysisResult> => {
   const key = apiKey.trim();
-  const model = customModelName?.trim() || "";
-  const endpoint = customEndpoint?.trim() || "";
 
   // 1. Google Gemini Key Auto-Detection
   if (key.startsWith('AIzaSy')) {
-    const finalModel = model || 'gemini-1.5-flash';
     return analyzeImage(base64Image, mimeType, key);
   }
 
-  // 2. OpenRouter / DeepSeek / Custom AI Provider Auto-Detection
-  // To handle any custom model or text-only model (like deepseek-chat, gpt-4o, claude-3-haiku),
-  // we use our signature High-Fidelity Hybrid Pipeline:
-  // First, extract deep visual details of the image using a fast vision model (Gemini 1.5 Flash),
-  // then pipe this rich text description into the custom/selected AI model to synthesize the final JSON report!
-  
+  // 2. OpenRouter / DeepSeek / Custom AI Provider Auto-Detection (Using High-Fidelity Hybrid Pipeline)
+  // Extract deep visual details of the image using a fast vision model (Gemini 1.5 Flash),
+  // then pipe this rich text description into the custom AI model (DeepSeek Chat/OpenRouter) to synthesize the final JSON report!
   let visionDescription = "";
   try {
     const visionApiKey = backupGeminiApiKey || (import.meta as any).env?.VITE_GEMINI_API_KEY;
@@ -68,21 +60,15 @@ export const autoDetectAndAnalyze = async (
     visionDescription = "An elegant graphic design render with a full character, neon elements, cybernetic aesthetics, and bold typography.";
   }
 
-  // Determine endpoint, model, and headers based on Key characteristics
+  // Determine endpoint and model strictly by Key type
   let targetEndpoint = "https://api.deepseek.com/v1/chat/completions";
   let targetModel = "deepseek-chat";
   let isOpenRouter = false;
 
-  if (key.startsWith('sk-or-') || key.includes('openrouter') || endpoint.includes('openrouter')) {
+  if (key.startsWith('sk-or-') || key.includes('openrouter')) {
     targetEndpoint = "https://openrouter.ai/api/v1/chat/completions";
-    targetModel = model || "deepseek/deepseek-chat";
+    targetModel = "deepseek/deepseek-chat";
     isOpenRouter = true;
-  } else if (endpoint) {
-    targetEndpoint = endpoint;
-    targetModel = model || "deepseek-chat";
-  } else {
-    // Default to DeepSeek official or OpenAI compatible format
-    targetModel = model || "deepseek-chat";
   }
 
   const systemInstruction = `

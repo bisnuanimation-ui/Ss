@@ -11,7 +11,6 @@ import {
   Unlock, 
   Sparkles, 
   CheckCircle2,
-  Cpu,
   Eye,
   EyeOff,
   User,
@@ -48,10 +47,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
   const [loadingUsers, setLoadingUsers] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   
-  // Central Universal Global API states configured by Admin
+  // Central Universal Global API state configured by Admin
   const [globalApiKey, setGlobalApiKey] = useState('');
-  const [globalModelName, setGlobalModelName] = useState('');
-  const [globalEndpoint, setGlobalEndpoint] = useState('');
   const [configSaving, setConfigSaving] = useState(false);
   const [configSuccess, setConfigSuccess] = useState(false);
 
@@ -95,8 +92,6 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
       if (snap.exists()) {
         const data = snap.data();
         setGlobalApiKey(data.apiKey || '');
-        setGlobalModelName(data.customModel || '');
-        setGlobalEndpoint(data.customEndpoint || '');
       }
     } catch (err) {
       console.error("Error loading global configuration:", err);
@@ -110,8 +105,6 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
       const docRef = doc(db, 'config', 'global');
       await setDoc(docRef, {
         apiKey: globalApiKey.trim(),
-        customModel: globalModelName.trim(),
-        customEndpoint: globalEndpoint.trim(),
         updatedAt: Date.now()
       }, { merge: true });
       setConfigSuccess(true);
@@ -190,7 +183,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
   if (!isAuthorized) {
     return (
       <div className="fixed inset-0 z-50 bg-black/95 backdrop-blur-lg flex items-center justify-center p-4">
-        <div className="bg-neutral-900/80 border border-white/10 rounded-3xl max-w-sm w-full p-6 text-center shadow-2xl relative overflow-hidden">
+        <div className="bg-neutral-900 border border-white/10 rounded-3xl max-w-sm w-full p-6 text-center shadow-2xl relative overflow-hidden">
           <div className="absolute top-0 right-0 w-48 h-48 bg-rose-500/5 rounded-full blur-[80px] pointer-events-none" />
           
           <div className="w-14 h-14 rounded-2xl bg-rose-500/10 border border-rose-500/20 text-rose-400 flex items-center justify-center mx-auto mb-5 shadow-lg">
@@ -308,7 +301,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
                   <span>সার্বজনীন সেন্ট্রাল এপিআই ডিস্ট্রিবিউশন (Centralized API Auto-Detection)</span>
                 </h4>
                 <p className="text-[11px] text-neutral-300 leading-relaxed">
-                  এখানে আপনি একটি সেন্ট্রাল এপিআই কী বসিয়ে দিলে, সমস্ত গ্রাহকদের জন্য ব্যাকগ্রাউন্ডে সেই এপিআই দিয়ে সার্ভিসটি চলতে থাকবে। আলাদা এপিআই প্রোভাইডার সিলেক্ট করা লাগবে না—সিস্টেম স্বয়ংক্রিয়ভাবে কী-টি কোন মডেলের তা ডিটেক্ট করে নেবে:
+                  এখানে আপনি একটি সেন্ট্রাল এপিআই কী বসিয়ে দিলে, সমস্ত গ্রাহকদের জন্য ব্যাকগ্রাউন্ডে সেই এপিআই দিয়ে সার্ভিসটি চলতে থাকবে। আলাদা এপিআই প্রোভাইডার সিলেক্ট করা লাগবে না—সিস্টেম স্বয়ংক্রিয়ভাবে কী-টি কোন مدلের তা ডিটেক্ট করে নেবে:
                 </p>
                 <div className="grid grid-cols-3 gap-2 pt-2 text-[10px] font-mono text-neutral-400">
                   <div className="p-2 rounded-xl bg-black/40 border border-white/5">
@@ -335,30 +328,6 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
                     placeholder="পাস্ট করুন (Paste Gemini, OpenRouter, or DeepSeek API Key here)"
                     value={globalApiKey}
                     onChange={(e) => setGlobalApiKey(e.target.value)}
-                    className="w-full bg-black/60 border border-white/10 rounded-xl px-4 py-3 text-xs text-white font-mono placeholder:text-neutral-700 focus:outline-none focus:border-rose-500"
-                  />
-                </div>
-
-                {/* Custom Model Name */}
-                <div className="space-y-1.5">
-                  <label className="text-[11px] font-bold text-neutral-400 uppercase tracking-wider block">Custom Model Name (Optional):</label>
-                  <input
-                    type="text"
-                    placeholder="যেমন: deepseek/deepseek-chat, gpt-4o-mini, gemini-1.5-pro"
-                    value={globalModelName}
-                    onChange={(e) => setGlobalModelName(e.target.value)}
-                    className="w-full bg-black/60 border border-white/10 rounded-xl px-4 py-3 text-xs text-white font-mono placeholder:text-neutral-700 focus:outline-none focus:border-rose-500"
-                  />
-                </div>
-
-                {/* Custom Endpoint */}
-                <div className="space-y-1.5">
-                  <label className="text-[11px] font-bold text-neutral-400 uppercase tracking-wider block">Custom Endpoint URL (Optional):</label>
-                  <input
-                    type="text"
-                    placeholder="যেমন: https://api.deepseek.com/v1"
-                    value={globalEndpoint}
-                    onChange={(e) => setGlobalEndpoint(e.target.value)}
                     className="w-full bg-black/60 border border-white/10 rounded-xl px-4 py-3 text-xs text-white font-mono placeholder:text-neutral-700 focus:outline-none focus:border-rose-500"
                   />
                 </div>
@@ -417,11 +386,6 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
                         <div className="min-w-0">
                           <div className="flex items-center gap-1.5 flex-wrap">
                             <span className="font-bold text-xs text-white truncate max-w-[150px]">{item.displayName}</span>
-                            {item.role === 'admin' && (
-                              <span className="px-1.5 py-0.5 rounded text-[8px] font-bold bg-rose-500/10 text-rose-400 border border-rose-500/20 uppercase">
-                                Admin
-                              </span>
-                            )}
                             {item.subscription?.status === 'premium' ? (
                               <span className="px-1.5 py-0.5 rounded text-[8px] font-bold bg-amber-500/10 text-amber-400 border border-amber-500/20 uppercase">
                                 Premium
@@ -434,7 +398,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
                           </div>
                           <p className="text-[10px] text-neutral-400 truncate mt-0.5">{item.email}</p>
                           <p className="text-[10px] text-neutral-500 mt-1">
-                            আজকের ব্যবহার: <span className="text-blue-400 font-bold">{item.dailyGenerations || 0}/5</span>
+                            আজকের ব্যবহার: <span className="text-blue-400 font-bold">{item.dailyGenerations || 0}/10</span>
                           </p>
                         </div>
                       </div>

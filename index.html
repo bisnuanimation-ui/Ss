@@ -8,6 +8,17 @@
   <meta property="og:title" content="PromptVision AI">
   <meta property="og:description" content="An advanced AI-powered tool that analyzes uploaded images to generate detailed text prompts for Midjourney, DALL-E, and other image generation models, capturing style, pose, and atmosphere.">
   <link rel="stylesheet" href="/index.css">
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', function() {
+        navigator.serviceWorker.register('/sw.js').then(function(reg) {
+          console.log('SW registered successfully:', reg.scope);
+        }).catch(function(err) {
+          console.log('SW registration failed:', err);
+        });
+      });
+    }
+  </script>
 </head>
 <body class="bg-[#070709] text-white">
   <div id="root"></div>

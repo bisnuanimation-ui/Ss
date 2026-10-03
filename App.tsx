@@ -155,8 +155,6 @@ const App: React.FC = () => {
 
       // Central global key prioritizing admin central setup, with custom local keys or default ENV as fallback
       const finalApiKey = globalConfig?.apiKey || customApiKey || deepseekApiKey || (import.meta as any).env?.VITE_GEMINI_API_KEY;
-      const finalModelName = globalConfig?.customModel || (activeProvider === 'deepseek' ? 'deepseek/deepseek-chat' : 'gemini-1.5-flash');
-      const finalEndpoint = globalConfig?.customEndpoint || '';
 
       if (!finalApiKey) {
         throw new Error('API_KEY_MISSING');
@@ -166,8 +164,6 @@ const App: React.FC = () => {
         state.image, 
         state.imageMimeType, 
         finalApiKey, 
-        finalModelName, 
-        finalEndpoint,
         customApiKey || (import.meta as any).env?.VITE_GEMINI_API_KEY
       );
 
