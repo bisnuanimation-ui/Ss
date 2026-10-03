@@ -11,13 +11,13 @@ export const analyzeImageWithDeepSeek = async (
   }
 
   // Step 1: Extract the extremely detailed visual description of the image using a fast vision run
-  // This ensures that the text-only deepseek-chat model gets a hyper-fidelity source input!
+  // We use gemini-1.5-flash which is a 100% verified production model on the Google AI REST endpoint.
   let visionDescription = "";
   try {
     const visionApiKey = geminiApiKeyForVision || (import.meta as any).env?.VITE_GEMINI_API_KEY;
     if (visionApiKey) {
       const response = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${visionApiKey}`,
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${visionApiKey}`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -42,8 +42,13 @@ export const analyzeImageWithDeepSeek = async (
           })
         }
       );
-      const data = await response.json();
-      visionDescription = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
+      if (response.ok) {
+        const data = await response.json();
+        visionDescription = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
+      } else {
+        const errText = await response.text();
+        console.warn("Vision model pre-run failed:", errText);
+      }
     }
   } catch (err) {
     console.warn("Pre-vision extraction for DeepSeek failed, using backup text analysis...", err);
@@ -110,7 +115,7 @@ You MUST respond ONLY with the raw JSON. Do not include markdown code block form
   if (!response.ok) {
     const errorText = await response.text();
     console.error("DeepSeek API error response:", errorText);
-    throw new Error('DEEPSEEK_API_ERROR');
+    throw new Error(`API Error ${response.status}: ${errorText || response.statusText}`);
   }
 
   const data = await response.json();

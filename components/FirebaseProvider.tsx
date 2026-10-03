@@ -12,7 +12,7 @@ import {
   serverTimestamp,
   collection,
   addDoc,
-  getDocFromServer
+  onSnapshot
 } from 'firebase/firestore';
 import { auth, db, googleProvider } from '../firebase';
 import { UserProfile, AnalysisResult, SavedAnalysis } from '../types';
@@ -25,6 +25,7 @@ interface FirebaseContextType {
   logout: () => Promise<void>;
   saveAnalysis: (result: AnalysisResult, imageThumbnail?: string) => Promise<void>;
   clearHistory: () => void;
+  incrementGenerationCount: () => Promise<boolean>; // Returns true if allowed, false if limit exceeded
 }
 
 const FirebaseContext = createContext<FirebaseContextType | undefined>(undefined);
@@ -33,7 +34,7 @@ const LOCAL_STORAGE_HISTORY_KEY = 'promptvision_history_v1';
 
 export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<UserProfile | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [history, setHistory] = useState<SavedAnalysis[]>(() => {
     try {
       const stored = localStorage.getItem(LOCAL_STORAGE_HISTORY_KEY);
@@ -43,40 +44,80 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     }
   });
 
-  // Listen for auth state
+  // Listen for auth state and user profile updates in real-time!
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+    setLoading(true);
+    let unsubscribeSnapshot: (() => void) | null = null;
+
+    const unsubscribeAuth = onAuthStateChanged(auth, async (firebaseUser) => {
+      if (unsubscribeSnapshot) {
+        unsubscribeSnapshot();
+        unsubscribeSnapshot = null;
+      }
+
       if (firebaseUser) {
-        const userProfile: UserProfile = {
+        const defaultProfile: UserProfile = {
           uid: firebaseUser.uid,
           email: firebaseUser.email || '',
           displayName: firebaseUser.displayName || 'Creator',
           photoURL: firebaseUser.photoURL || '',
-          role: 'user',
+          role: firebaseUser.email === 'bisnuanimation@gmail.com' ? 'admin' : 'user',
+          subscription: {
+            status: 'free',
+            expiresAt: 0,
+            token: ''
+          },
+          dailyGenerations: 0,
+          lastGenerationDate: new Date().toISOString().split('T')[0]
         };
 
-        setUser(userProfile);
-
-        // Attempt silent sync to Firestore without blocking the app if rules are restrictive
+        // Create document if it doesn't exist yet
+        const userDocRef = doc(db, 'users', firebaseUser.uid);
         try {
-          const userDocRef = doc(db, 'users', firebaseUser.uid);
           const snap = await getDoc(userDocRef);
           if (!snap.exists()) {
             await setDoc(userDocRef, {
-              ...userProfile,
+              ...defaultProfile,
               createdAt: serverTimestamp(),
             }, { merge: true });
           }
         } catch (err) {
-          // Gracefully swallow permissions or network warnings during silent sync
-          console.warn("User profile background sync note:", err);
+          console.warn("Error creating user profile:", err);
         }
+
+        // Establish real-time listener on the user's document
+        unsubscribeSnapshot = onSnapshot(userDocRef, (docSnap) => {
+          if (docSnap.exists()) {
+            const data = docSnap.data();
+            setUser({
+              uid: firebaseUser.uid,
+              email: firebaseUser.email || '',
+              displayName: firebaseUser.displayName || 'Creator',
+              photoURL: firebaseUser.photoURL || '',
+              role: data.role || (firebaseUser.email === 'bisnuanimation@gmail.com' ? 'admin' : 'user'),
+              subscription: data.subscription || { status: 'free', expiresAt: 0, token: '' },
+              dailyGenerations: data.dailyGenerations ?? 0,
+              lastGenerationDate: data.lastGenerationDate ?? ''
+            });
+          } else {
+            setUser(defaultProfile);
+          }
+          setLoading(false);
+        }, (error) => {
+          console.warn("User onSnapshot listener error:", error);
+          setUser(defaultProfile);
+          setLoading(false);
+        });
       } else {
         setUser(null);
+        setLoading(false);
       }
     });
 
-    return () => unsubscribe();
+    return () => {
+      unsubscribeAuth();
+      if (unsubscribeSnapshot) unsubscribeSnapshot();
+    };
   }, []);
 
   const signIn = async () => {
@@ -94,6 +135,42 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     } catch (error) {
       console.error("Logout failed:", error);
     }
+  };
+
+  const incrementGenerationCount = async (): Promise<boolean> => {
+    if (!user) return true; // Let non-logged in or guest user rely on local key if needed, or enforce login
+
+    // Admin has unlimited trials
+    if (user.role === 'admin') return true;
+
+    // Premium users have unlimited trials
+    if (user.subscription?.status === 'premium') return true;
+
+    const todayStr = new Date().toISOString().split('T')[0];
+    let dailyCount = user.dailyGenerations || 0;
+    const lastDate = user.lastGenerationDate || '';
+
+    if (lastDate !== todayStr) {
+      dailyCount = 0;
+    }
+
+    // Five-generation trial limit
+    if (dailyCount >= 5) {
+      return false;
+    }
+
+    // Save incremented count
+    try {
+      const userDocRef = doc(db, 'users', user.uid);
+      await setDoc(userDocRef, {
+        dailyGenerations: dailyCount + 1,
+        lastGenerationDate: todayStr
+      }, { merge: true });
+    } catch (err) {
+      console.warn("Could not save generation increment on cloud:", err);
+    }
+
+    return true;
   };
 
   const saveAnalysis = async (result: AnalysisResult, imageThumbnail?: string) => {
@@ -138,7 +215,16 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   };
 
   return (
-    <FirebaseContext.Provider value={{ user, loading, history, signIn, logout, saveAnalysis, clearHistory }}>
+    <FirebaseContext.Provider value={{ 
+      user, 
+      loading, 
+      history, 
+      signIn, 
+      logout, 
+      saveAnalysis, 
+      clearHistory,
+      incrementGenerationCount
+    }}>
       {children}
     </FirebaseContext.Provider>
   );

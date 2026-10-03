@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   Sparkles, 
@@ -14,18 +14,26 @@ import {
   Key,
   ExternalLink,
   Check,
-  Cpu
+  Cpu,
+  Shield,
+  MessageSquare,
+  Lock,
+  Unlock,
+  CheckCircle2
 } from 'lucide-react';
 import Header from './components/Header';
 import ImagePreview from './components/ImagePreview';
 import ResultsView from './components/ResultsView';
+import { AdminPanel } from './components/AdminPanel';
 import { analyzeImage } from './services/geminiService';
 import { analyzeImageWithDeepSeek } from './services/deepseekService';
 import { AppState, AnalysisResult } from './types';
 import { useFirebase } from './components/FirebaseProvider';
+import { doc, onSnapshot } from 'firebase/firestore';
+import { db } from './firebase';
 
 const App: React.FC = () => {
-  const { user, history, signIn, logout, saveAnalysis, clearHistory } = useFirebase();
+  const { user, history, signIn, logout, saveAnalysis, clearHistory, incrementGenerationCount } = useFirebase();
   const [state, setState] = useState<AppState>({
     image: null,
     imageMimeType: null,
@@ -37,6 +45,8 @@ const App: React.FC = () => {
   const [showHistory, setShowHistory] = useState(false);
   const [showGuide, setShowGuide] = useState(false);
   const [showApiKeyModal, setShowApiKeyModal] = useState(false);
+  const [showAdminPanel, setShowAdminPanel] = useState(false);
+  const [showUpgradeModal, setShowUpgradeModal] = useState(false);
 
   // Active API Provider ('gemini' | 'deepseek')
   const [activeProvider, setActiveProvider] = useState<'gemini' | 'deepseek'>(() => {
@@ -56,6 +66,21 @@ const App: React.FC = () => {
   const [tempGeminiKey, setTempGeminiKey] = useState<string>(customApiKey);
   const [tempDeepseekKey, setTempDeepseekKey] = useState<string>(deepseekApiKey);
   const [saveSuccess, setSaveSuccess] = useState(false);
+
+  // Admin Configured Global Configuration state
+  const [globalConfig, setGlobalConfig] = useState<any>(null);
+
+  // Real-time listener for Global Configurations from Firestore
+  useEffect(() => {
+    const unsub = onSnapshot(doc(db, 'config', 'global'), (snap) => {
+      if (snap.exists()) {
+        setGlobalConfig(snap.data());
+      }
+    }, (err) => {
+      console.warn("Global config load note:", err);
+    });
+    return () => unsub();
+  }, []);
 
   const handleFileUpload = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -104,23 +129,42 @@ const App: React.FC = () => {
   const handleAnalyze = async () => {
     if (!state.image || !state.imageMimeType) return;
 
+    // Enforce authentication
+    if (!user) {
+      setState(prev => ({ ...prev, error: 'অনুগ্রহ করে প্রথমে গুগল সাইন-ইন সম্পন্ন করুন।' }));
+      signIn();
+      return;
+    }
+
+    // 1. Enforce trial count increment & limits
+    const allowed = await incrementGenerationCount();
+    if (!allowed) {
+      setShowUpgradeModal(true);
+      return;
+    }
+
     setState(prev => ({ ...prev, isAnalyzing: true, error: null }));
 
     try {
       let result: AnalysisResult;
 
-      if (activeProvider === 'deepseek') {
-        if (!deepseekApiKey) {
+      // Determine key/provider prioritizing personal key first, falling back to global admin keys
+      const finalProvider = activeProvider || globalConfig?.activeProvider || 'gemini';
+      const finalGeminiKey = customApiKey || globalConfig?.geminiApiKey;
+      const finalDeepseekKey = deepseekApiKey || globalConfig?.deepseekApiKey;
+
+      if (finalProvider === 'deepseek') {
+        if (!finalDeepseekKey) {
           throw new Error('DEEPSEEK_API_KEY_MISSING');
         }
         result = await analyzeImageWithDeepSeek(
           state.image, 
           state.imageMimeType, 
-          deepseekApiKey, 
-          customApiKey
+          finalDeepseekKey, 
+          finalGeminiKey
         );
       } else {
-        result = await analyzeImage(state.image, state.imageMimeType, customApiKey);
+        result = await analyzeImage(state.image, state.imageMimeType, finalGeminiKey);
       }
 
       setState(prev => ({ ...prev, result, isAnalyzing: false }));
@@ -132,11 +176,13 @@ const App: React.FC = () => {
       let errorMessage = 'বিশ্লেষণ ব্যর্থ হয়েছে। অনুগ্রহ করে আবার চেষ্টা করুন (Analysis failed).';
 
       if (err.message === 'DEEPSEEK_API_KEY_MISSING') {
-        errorMessage = 'DeepSeek API Key প্রয়োজন: অনুগ্রহ করে উপরে "ফ্রি API কী" সেটিংসে গিয়ে DeepSeek বা OpenRouter কী সেভ করুন।';
+        errorMessage = 'DeepSeek API Key প্রয়োজন: অনুগ্রহ করে উপরে সেটিংসে গিয়ে DeepSeek বা OpenRouter কী সেভ করুন অথবা অ্যাডমিনকে গ্লোবাল কী সেট করতে বলুন।';
       } else if (err.message?.includes('QUOTA_EXCEEDED') || err.message?.includes('RESOURCE_EXHAUSTED') || err.status === 429) {
         errorMessage = 'কোটা শেষ হয়েছে (Quota Exceeded): অনুগ্রহ করে কিছুক্ষণ অপেক্ষা করে আবার চেষ্টা করুন।';
-      } else if (err.message?.includes('API_KEY_INVALID') || err.message?.includes('DEEPSEEK_API_ERROR')) {
-        errorMessage = 'API Key বা মডেল কানেকশন ত্রুটি। অনুগ্রহ করে আপনার এপিআই কী সঠিক কিনা যাচাই করুন।';
+      } else if (err.message?.includes('API_KEY_INVALID')) {
+        errorMessage = 'API Key ত্রুটি: আপনার এপিআই কী-টি ভুল বা নিষ্ক্রিয়। দয়া করে সঠিক কী চেক করুন।';
+      } else {
+        errorMessage = `বিশ্লেষণ ব্যর্থ হয়েছে (Details): ${err.message || err}`;
       }
 
       setState(prev => ({
@@ -205,6 +251,17 @@ const App: React.FC = () => {
           </div>
 
           <div className="flex items-center gap-3">
+            {/* Admin Panel Button */}
+            {user && (user.role === 'admin' || user.email === 'bisnuanimation@gmail.com') && (
+              <button
+                onClick={() => setShowAdminPanel(true)}
+                className="px-3.5 py-1.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 text-xs font-bold text-rose-400 flex items-center gap-1.5 transition-all animate-pulse"
+              >
+                <Shield className="w-3.5 h-3.5" />
+                <span>🛡️ Admin Panel</span>
+              </button>
+            )}
+
             {/* Custom Model / API Key Button */}
             <button
               onClick={() => {
@@ -222,7 +279,7 @@ const App: React.FC = () => {
               <span>
                 {activeProvider === 'deepseek' 
                   ? `DeepSeek / deepseek-chat ${deepseekApiKey ? '(Active)' : '(Setup)'}` 
-                  : `Gemini API ${customApiKey ? '(Active)' : '(Free Tier)'}`}
+                  : `Gemini API ${customApiKey ? '(Active)' : '(Centralized)'}`}
               </span>
             </button>
 
@@ -249,9 +306,14 @@ const App: React.FC = () => {
                 {user.photoURL && (
                   <img src={user.photoURL} alt="" className="w-7 h-7 rounded-full border border-white/20" />
                 )}
-                <span className="text-xs text-neutral-300 hidden sm:inline max-w-[100px] truncate">
-                  {user.displayName}
-                </span>
+                <div className="flex flex-col min-w-0">
+                  <span className="text-xs text-neutral-300 font-bold truncate max-w-[100px]">
+                    {user.displayName}
+                  </span>
+                  <span className="text-[9px] text-amber-400 font-bold">
+                    {user.subscription?.status === 'premium' ? '🏆 Premium' : 'Free Trial'}
+                  </span>
+                </div>
                 <button
                   onClick={logout}
                   title="Logout"
@@ -289,6 +351,20 @@ const App: React.FC = () => {
             />
 
             <div className="flex flex-col items-center gap-4 mt-6">
+              {/* Login Banner for Guests */}
+              {!user && (
+                <div className="p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-xs text-amber-300 flex items-center gap-2 max-w-md text-center">
+                  <AlertCircle className="w-4 h-4 shrink-0" />
+                  <span> ছবি বিশ্লেষণ করতে অনুগ্রহ করে প্রথমে গুগল সাইন-ইন করুন (৫ বার ফ্রি ট্রায়াল সুযোগ পাবেন)।</span>
+                </div>
+              )}
+
+              {user && (
+                <div className="text-xs text-neutral-400">
+                  আজকের অবশিষ্ট ফ্রি ট্রায়াল: <span className="font-bold text-white">{(5 - (user.dailyGenerations || 0)) < 0 ? 0 : (5 - (user.dailyGenerations || 0))}/5</span>
+                </div>
+              )}
+
               <motion.button
                 whileHover={isReady ? { scale: 1.02 } : {}}
                 whileTap={isReady ? { scale: 0.98 } : {}}
@@ -307,12 +383,12 @@ const App: React.FC = () => {
                       <div className="w-1.5 h-1.5 bg-white rounded-full animate-bounce [animation-delay:-0.15s]" />
                       <div className="w-1.5 h-1.5 bg-white rounded-full animate-bounce" />
                     </div>
-                    <span>{activeProvider === 'deepseek' ? 'DeepSeek প্রসেস করছে...' : 'Gemini প্রসেস করছে...'}</span>
+                    <span>বিশ্লেষণ হচ্ছে...</span>
                   </>
                 ) : (
                   <>
                     <Wand2 className="w-4 h-4" />
-                    <span>প্রম্পট তৈরি করুন ({activeProvider === 'deepseek' ? 'DeepSeek' : 'Gemini'})</span>
+                    <span>প্রম্পট তৈরি করুন</span>
                   </>
                 )}
               </motion.button>
@@ -395,6 +471,58 @@ const App: React.FC = () => {
         )}
       </main>
 
+      {/* Admin Panel Modal Overlay */}
+      {showAdminPanel && (
+        <AdminPanel onClose={() => setShowAdminPanel(false)} />
+      )}
+
+      {/* Premium Upgrade Block Modal Overlay */}
+      {showUpgradeModal && (
+        <div className="fixed inset-0 z-50 bg-black/90 backdrop-blur-md flex items-center justify-center p-4">
+          <motion.div 
+            initial={{ scale: 0.95, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            className="bg-neutral-900 border border-amber-500/20 rounded-3xl max-w-md w-full p-6 text-center relative overflow-hidden shadow-2xl"
+          >
+            <div className="absolute -top-10 -left-10 w-40 h-48 bg-amber-500/10 rounded-full blur-[80px] pointer-events-none" />
+            
+            <div className="w-16 h-16 rounded-2xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center mx-auto mb-5 text-amber-400 animate-bounce">
+              <Lock className="w-7 h-7" />
+            </div>
+
+            <h3 className="text-xl font-bold text-white tracking-tight">আপনার ৫টি ফ্রি ট্রায়াল লিমিট শেষ!</h3>
+            <p className="text-xs text-neutral-300 mt-2.5 leading-relaxed">
+              আজকের ফ্রি ছবি বিশ্লেষণের লিমিট শেষ হয়ে গেছে। আনলিমিটেড ব্যবহার এবং হাই-এন্ড প্রম্পট সার্ভিস চালু রাখতে আজই মাত্র **২০ টাকা** দিয়ে প্রিমিয়াম মেম্বারশিপ কিনুন!
+            </p>
+
+            <div className="my-5 p-4 rounded-2xl bg-white/5 border border-white/10 space-y-1.5 text-left">
+              <p className="text-xs font-semibold text-neutral-300">যোগাযোগের নম্বর (WhatsApp):</p>
+              <p className="text-base font-extrabold text-amber-400 tracking-wider">01332756124</p>
+              <p className="text-[10px] text-neutral-500 leading-relaxed">* যোগাযোগ করার পর অ্যাডমিন প্যানেল থেকে আপনার অ্যাকাউন্টে প্রিমিয়াম মেম্বারশিপ সচল করে দেওয়া হবে।</p>
+            </div>
+
+            <div className="space-y-3">
+              <a
+                href={`https://wa.me/8801332756124?text=Hi%2C%2520I%2520want%2520to%2520purchase%2520premium%2520subscription%2520for%2520PromptVision%2520AI%2520for%252520my%2520email%2520${user?.email}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="w-full py-3 rounded-2xl bg-amber-500 hover:bg-amber-400 text-black font-extrabold text-xs uppercase tracking-wider transition-all flex items-center justify-center gap-2 hover:shadow-lg shadow-amber-500/20"
+              >
+                <MessageSquare className="w-4 h-4" />
+                <span>হোয়াটসঅ্যাপে কিনুন (Buy Premium)</span>
+              </a>
+
+              <button
+                onClick={() => setShowUpgradeModal(false)}
+                className="w-full py-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-neutral-400 hover:text-white text-xs font-medium transition-colors"
+              >
+                বন্ধ করুন (Close)
+              </button>
+            </div>
+          </motion.div>
+        </div>
+      )}
+
       {/* Model & API Key Settings Modal */}
       {showApiKeyModal && (
         <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4">
@@ -438,7 +566,7 @@ const App: React.FC = () => {
                       <span>Google Gemini</span>
                     </div>
                     <p className="text-[10px] text-neutral-400 leading-relaxed">
-                      Gemini 2.5/3.8 Flash মডেল। আল্ট্রা-ফাস্ট ও মাল্টিমোডাল ছবি অ্যানালাইসিস।
+                      Gemini 1.5/3.8 Flash মডেল। আল্ট্রা-ফাস্ট ও মাল্টিমোডাল ছবি অ্যানালাইসিস।
                     </p>
                   </button>
 

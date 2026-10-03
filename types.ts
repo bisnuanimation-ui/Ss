@@ -9,6 +9,8 @@ export interface UserProfile {
     expiresAt: number;
     token: string;
   };
+  dailyGenerations?: number;
+  lastGenerationDate?: string;
 }
 
 export interface AnalysisResult {
