@@ -19,14 +19,14 @@ import {
   MessageSquare,
   Lock,
   Unlock,
-  CheckCircle2
+  CheckCircle2,
+  Box
 } from 'lucide-react';
 import Header from './components/Header';
 import ImagePreview from './components/ImagePreview';
 import ResultsView from './components/ResultsView';
 import { AdminPanel } from './components/AdminPanel';
-import { analyzeImage } from './services/geminiService';
-import { analyzeImageWithDeepSeek } from './services/deepseekService';
+import { autoDetectAndAnalyze } from './services/aiService';
 import { AppState, AnalysisResult } from './types';
 import { useFirebase } from './components/FirebaseProvider';
 import { doc, onSnapshot } from 'firebase/firestore';
@@ -54,7 +54,6 @@ const App: React.FC = () => {
 
   const [showHistory, setShowHistory] = useState(false);
   const [showGuide, setShowGuide] = useState(false);
-  const [showApiKeyModal, setShowApiKeyModal] = useState(false);
   const [showAdminPanel, setShowAdminPanel] = useState(false);
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
 
@@ -72,10 +71,6 @@ const App: React.FC = () => {
   const [deepseekApiKey, setDeepseekApiKey] = useState<string>(() => {
     return localStorage.getItem('promptvision_deepseek_api_key') || '';
   });
-
-  const [tempGeminiKey, setTempGeminiKey] = useState<string>(customApiKey);
-  const [tempDeepseekKey, setTempDeepseekKey] = useState<string>(deepseekApiKey);
-  const [saveSuccess, setSaveSuccess] = useState(false);
 
   // Admin Configured Global Configuration state
   const [globalConfig, setGlobalConfig] = useState<any>(null);
@@ -158,24 +153,23 @@ const App: React.FC = () => {
     try {
       let result: AnalysisResult;
 
-      // Determine key/provider prioritizing personal key first, falling back to global admin keys
-      const finalProvider = activeProvider || globalConfig?.activeProvider || 'gemini';
-      const finalGeminiKey = customApiKey || globalConfig?.geminiApiKey;
-      const finalDeepseekKey = deepseekApiKey || globalConfig?.deepseekApiKey;
+      // Central global key prioritizing admin central setup, with custom local keys or default ENV as fallback
+      const finalApiKey = globalConfig?.apiKey || customApiKey || deepseekApiKey || (import.meta as any).env?.VITE_GEMINI_API_KEY;
+      const finalModelName = globalConfig?.customModel || (activeProvider === 'deepseek' ? 'deepseek/deepseek-chat' : 'gemini-1.5-flash');
+      const finalEndpoint = globalConfig?.customEndpoint || '';
 
-      if (finalProvider === 'deepseek') {
-        if (!finalDeepseekKey) {
-          throw new Error('DEEPSEEK_API_KEY_MISSING');
-        }
-        result = await analyzeImageWithDeepSeek(
-          state.image, 
-          state.imageMimeType, 
-          finalDeepseekKey, 
-          finalGeminiKey
-        );
-      } else {
-        result = await analyzeImage(state.image, state.imageMimeType, finalGeminiKey);
+      if (!finalApiKey) {
+        throw new Error('API_KEY_MISSING');
       }
+
+      result = await autoDetectAndAnalyze(
+        state.image, 
+        state.imageMimeType, 
+        finalApiKey, 
+        finalModelName, 
+        finalEndpoint,
+        customApiKey || (import.meta as any).env?.VITE_GEMINI_API_KEY
+      );
 
       setState(prev => ({ ...prev, result, isAnalyzing: false }));
 
@@ -185,12 +179,12 @@ const App: React.FC = () => {
       console.error("Analysis execution failed:", err);
       let errorMessage = 'বিশ্লেষণ ব্যর্থ হয়েছে। অনুগ্রহ করে আবার চেষ্টা করুন (Analysis failed).';
 
-      if (err.message === 'DEEPSEEK_API_KEY_MISSING') {
-        errorMessage = 'DeepSeek API Key প্রয়োজন: অনুগ্রহ করে উপরে সেটিংসে গিয়ে DeepSeek বা OpenRouter কী সেভ করুন অথবা অ্যাডমিনকে গ্লোবাল কী সেট করতে বলুন।';
+      if (err.message === 'API_KEY_MISSING') {
+        errorMessage = 'সেন্ট্রাল এপিআই কী অনুপস্থিত: অনুগ্রহ করে অ্যাডমিন প্যানেলে গিয়ে একটি এপিআই কী সেট করুন।';
       } else if (err.message?.includes('QUOTA_EXCEEDED') || err.message?.includes('RESOURCE_EXHAUSTED') || err.status === 429) {
         errorMessage = 'কোটা শেষ হয়েছে (Quota Exceeded): অনুগ্রহ করে কিছুক্ষণ অপেক্ষা করে আবার চেষ্টা করুন।';
       } else if (err.message?.includes('API_KEY_INVALID')) {
-        errorMessage = 'API Key ত্রুটি: আপনার এপিআই কী-টি ভুল বা নিষ্ক্রিয়। দয়া করে সঠিক কী চেক করুন।';
+        errorMessage = 'API Key ত্রুটি: এপিআই কী-টি ভুল বা নিষ্ক্রিয়। দয়া করে সঠিক কী চেক করুন।';
       } else {
         errorMessage = `বিশ্লেষণ ব্যর্থ হয়েছে (Details): ${err.message || err}`;
       }
@@ -214,36 +208,6 @@ const App: React.FC = () => {
     setShowHistory(false);
   };
 
-  const handleSaveApiKeySettings = () => {
-    const trimmedGemini = tempGeminiKey.trim();
-    const trimmedDeepseek = tempDeepseekKey.trim();
-
-    setCustomApiKey(trimmedGemini);
-    setDeepseekApiKey(trimmedDeepseek);
-
-    localStorage.setItem('promptvision_custom_api_key', trimmedGemini);
-    localStorage.setItem('promptvision_deepseek_api_key', trimmedDeepseek);
-    localStorage.setItem('promptvision_active_provider', activeProvider);
-
-    setSaveSuccess(true);
-    setTimeout(() => {
-      setSaveSuccess(false);
-      setShowApiKeyModal(false);
-    }, 1500);
-  };
-
-  const handleClearGeminiKey = () => {
-    setCustomApiKey('');
-    setTempGeminiKey('');
-    localStorage.removeItem('promptvision_custom_api_key');
-  };
-
-  const handleClearDeepseekKey = () => {
-    setDeepseekApiKey('');
-    setTempDeepseekKey('');
-    localStorage.removeItem('promptvision_deepseek_api_key');
-  };
-
   const isReady = !!state.image && !state.isAnalyzing;
 
   return (
@@ -261,36 +225,26 @@ const App: React.FC = () => {
           </div>
 
           <div className="flex items-center gap-3">
-            {/* Admin Panel Button */}
-            {user && (user.role === 'admin' || user.email === 'bisnuanimation@gmail.com') && (
-              <button
-                onClick={() => setShowAdminPanel(true)}
-                className="px-3.5 py-1.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 text-xs font-bold text-rose-400 flex items-center gap-1.5 transition-all animate-pulse"
-              >
-                <Shield className="w-3.5 h-3.5" />
-                <span>🛡️ Admin Panel</span>
-              </button>
+            {/* Real-time Central AI status indicator */}
+            {globalConfig?.apiKey ? (
+              <div className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-xs text-emerald-400 font-bold">
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
+                <span>Central AI Active (সার্ভিস সচল)</span>
+              </div>
+            ) : (
+              <div className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-red-500/10 border border-red-500/20 text-xs text-red-400 font-bold">
+                <span className="w-2 h-2 rounded-full bg-red-400" />
+                <span>No Central API Configured</span>
+              </div>
             )}
 
-            {/* Custom Model / API Key Button */}
+            {/* Admin Panel Button */}
             <button
-              onClick={() => {
-                setTempGeminiKey(customApiKey);
-                setTempDeepseekKey(deepseekApiKey);
-                setShowApiKeyModal(true);
-              }}
-              className={`px-3.5 py-1.5 rounded-xl border text-xs font-semibold flex items-center gap-1.5 transition-all ${
-                customApiKey || deepseekApiKey
-                  ? 'bg-gradient-to-r from-emerald-500/10 to-cyan-500/10 text-emerald-400 border-emerald-500/30' 
-                  : 'bg-white/5 hover:bg-white/10 border-white/10 text-neutral-300 hover:text-white'
-              }`}
+              onClick={() => setShowAdminPanel(true)}
+              className="px-3.5 py-1.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 text-xs font-bold text-rose-400 flex items-center gap-1.5 transition-all"
             >
-              <Key className="w-3.5 h-3.5 text-emerald-400" />
-              <span>
-                {activeProvider === 'deepseek' 
-                  ? `DeepSeek / deepseek-chat ${deepseekApiKey ? '(Active)' : '(Setup)'}` 
-                  : `Gemini API ${customApiKey ? '(Active)' : '(Centralized)'}`}
-              </span>
+              <Shield className="w-3.5 h-3.5 text-rose-400" />
+              <span>🛡️ Admin Panel</span>
             </button>
 
             <button
@@ -453,7 +407,7 @@ const App: React.FC = () => {
                 </div>
                 <h4 className="text-sm font-bold text-white mb-2">ছবি আপলোড করুন</h4>
                 <p className="text-xs text-neutral-400 leading-relaxed">
-                  আপনার পছন্দের যেকোনো আর্ট, ফটো বা ডিজাইন আপলোড করুন। AI এর ক্যামেরা, লাইটিং ও পোজ স্ক্যান করবে।
+                  আপনার পছন্দের যেকোনো আর্ট, ফটো বা ডিজাইন আপলোড করুন। AI এর ক্যামেরা, লাইٹنگ ও পোজ স্ক্যান করবে।
                 </p>
               </div>
 
@@ -530,275 +484,6 @@ const App: React.FC = () => {
               </button>
             </div>
           </motion.div>
-        </div>
-      )}
-
-      {/* Model & API Key Settings Modal */}
-      {showApiKeyModal && (
-        <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4">
-          <motion.div 
-            initial={{ scale: 0.95, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
-            className="bg-neutral-900 border border-white/10 rounded-3xl max-w-xl w-full p-6 shadow-2xl relative overflow-hidden"
-          >
-            <div className="absolute top-0 right-0 w-48 h-48 bg-cyan-500/5 rounded-full blur-3xl pointer-events-none" />
-
-            <div className="flex items-center justify-between mb-4 border-b border-white/5 pb-4">
-              <div className="flex items-center gap-2">
-                <Key className="w-5 h-5 text-cyan-400 animate-pulse" />
-                <h3 className="font-bold text-base text-white">API Model Settings (এপিআই মডেল কনফিগারেশন)</h3>
-              </div>
-              <button
-                onClick={() => setShowApiKeyModal(false)}
-                className="p-1 rounded-lg text-neutral-400 hover:text-white"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            <div className="space-y-5">
-              {/* Active Provider Selector */}
-              <div className="space-y-2">
-                <span className="text-xs font-bold text-neutral-400 block uppercase tracking-wider">
-                  Active AI Model (সক্রিয় এপিআই মডেল নির্বাচন করুন):
-                </span>
-                <div className="grid grid-cols-2 gap-3">
-                  <button
-                    onClick={() => setActiveProvider('gemini')}
-                    className={`p-4 rounded-2xl border text-left transition-all ${
-                      activeProvider === 'gemini'
-                        ? 'bg-blue-500/10 border-blue-500 text-white shadow-lg shadow-blue-500/10'
-                        : 'bg-white/5 border-white/5 text-neutral-400 hover:text-white'
-                    }`}
-                  >
-                    <div className="font-bold text-xs flex items-center gap-1.5 mb-1 text-blue-400">
-                      <Sparkles className="w-3.5 h-3.5" />
-                      <span>Google Gemini</span>
-                    </div>
-                    <p className="text-[10px] text-neutral-400 leading-relaxed">
-                      Gemini 1.5/3.8 Flash মডেল। আল্ট্রা-ফাস্ট ও মাল্টিমোডাল ছবি অ্যানালাইসিস।
-                    </p>
-                  </button>
-
-                  <button
-                    onClick={() => setActiveProvider('deepseek')}
-                    className={`p-4 rounded-2xl border text-left transition-all ${
-                      activeProvider === 'deepseek'
-                        ? 'bg-cyan-500/10 border-cyan-500 text-white shadow-lg shadow-cyan-500/10'
-                        : 'bg-white/5 border-white/5 text-neutral-400 hover:text-white'
-                    }`}
-                  >
-                    <div className="font-bold text-xs flex items-center gap-1.5 mb-1 text-cyan-400">
-                      <Cpu className="w-3.5 h-3.5" />
-                      <span>deepseek-chat</span>
-                    </div>
-                    <p className="text-[10px] text-neutral-400 leading-relaxed">
-                      DeepSeek-Chat (OpenRouter / DeepSeek API)। বুদ্ধিমত্তা ও প্রম্পট রাইটিং মাস্টার।
-                    </p>
-                  </button>
-                </div>
-              </div>
-
-              {/* Gemini Section */}
-              <div className="space-y-3 p-4 rounded-2xl bg-white/5 border border-white/5">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-blue-400 flex items-center gap-1">
-                    <Sparkles className="w-3.5 h-3.5" /> Google Gemini API Key:
-                  </span>
-                  <a
-                    href="https://aistudio.google.com/"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-[10px] text-neutral-400 hover:text-blue-400 flex items-center gap-1 font-bold underline"
-                  >
-                    <span>ফ্রি লিঙ্ক</span>
-                    <ExternalLink className="w-2.5 h-2.5" />
-                  </a>
-                </div>
-                <div className="flex gap-2">
-                  <input
-                    type="password"
-                    placeholder="AIzaSy... (Gemini Key)"
-                    value={tempGeminiKey}
-                    onChange={(e) => setTempGeminiKey(e.target.value)}
-                    className="flex-1 bg-black/50 border border-white/10 rounded-xl px-3 py-2 text-xs text-white font-mono placeholder:text-neutral-700 focus:outline-none focus:border-blue-500 transition-colors"
-                  />
-                  {customApiKey && (
-                    <button
-                      onClick={handleClearGeminiKey}
-                      className="px-3 py-2 rounded-xl bg-red-500/10 hover:bg-red-500/25 text-red-400 text-[10px] font-medium transition-colors"
-                    >
-                      Clear
-                    </button>
-                  )}
-                </div>
-              </div>
-
-              {/* DeepSeek Section */}
-              <div className="space-y-3 p-4 rounded-2xl bg-white/5 border border-white/5">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-cyan-400 flex items-center gap-1">
-                    <Cpu className="w-3.5 h-3.5" /> DeepSeek (OpenRouter) Key:
-                  </span>
-                  <a
-                    href="https://openrouter.ai/"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-[10px] text-neutral-400 hover:text-cyan-400 flex items-center gap-1 font-bold underline"
-                  >
-                    <span>ফ্রি OpenRouter লিঙ্ক</span>
-                    <ExternalLink className="w-2.5 h-2.5" />
-                  </a>
-                </div>
-                <div className="flex gap-2">
-                  <input
-                    type="password"
-                    placeholder="sk-or-... / sk-api... (DeepSeek / OpenRouter)"
-                    value={tempDeepseekKey}
-                    onChange={(e) => setTempDeepseekKey(e.target.value)}
-                    className="flex-1 bg-black/50 border border-white/10 rounded-xl px-3 py-2 text-xs text-white font-mono placeholder:text-neutral-700 focus:outline-none focus:border-cyan-500 transition-colors"
-                  />
-                  {deepseekApiKey && (
-                    <button
-                      onClick={handleClearDeepseekKey}
-                      className="px-3 py-2 rounded-xl bg-red-500/10 hover:bg-red-500/25 text-red-400 text-[10px] font-medium transition-colors"
-                    >
-                      Clear
-                    </button>
-                  )}
-                </div>
-                <p className="text-[10px] text-neutral-500 leading-relaxed">
-                  * **deepseek/deepseek-chat** ওপেনরাউটার বা ডিপসিক অফিসিয়াল এপিআই-এর মাধ্যমে চলবে। এটি ছবির মাইক্রো-ডিটেইলস বিশ্লেষণ করতে আমাদের ডাইনামিক হাইব্রিড পার্সিং টেকনিক ব্যবহার করে।
-                </p>
-              </div>
-
-              {saveSuccess && (
-                <div className="text-xs text-emerald-400 font-semibold flex items-center gap-1.5 justify-center py-1">
-                  <Check className="w-4 h-4" />
-                  <span>কনফিগারেশন সফলভাবে সেভ হয়েছে!</span>
-                </div>
-              )}
-
-              <div className="flex gap-2 pt-2 border-t border-white/5">
-                <button
-                  onClick={handleSaveApiKeySettings}
-                  className="flex-1 py-3 rounded-xl bg-gradient-to-r from-emerald-600 to-cyan-600 hover:brightness-110 text-white font-bold text-xs uppercase tracking-wider transition-all"
-                >
-                  সেভ ও সক্রিয় করুন (Save & Activate)
-                </button>
-              </div>
-            </div>
-          </motion.div>
-        </div>
-      )}
-
-      {/* History Drawer Modal */}
-      {showHistory && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-neutral-900 border border-white/10 rounded-3xl max-w-xl w-full max-h-[80vh] flex flex-col shadow-2xl overflow-hidden">
-            <div className="p-5 border-b border-white/10 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Clock className="w-4 h-4 text-purple-400" />
-                <h3 className="font-bold text-sm text-white">পূর্বের তৈরি প্রম্পট হিস্ট্রি (History)</h3>
-              </div>
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={clearHistory}
-                  className="text-xs text-red-400 hover:text-red-300 font-medium px-2 py-1"
-                >
-                  Clear All
-                </button>
-                <button
-                  onClick={() => setShowHistory(false)}
-                  className="p-1 rounded-lg text-neutral-400 hover:text-white"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-            </div>
-
-            <div className="flex-1 overflow-y-auto p-4 space-y-3">
-              {history.map((item) => (
-                <div
-                  key={item.id}
-                  onClick={() => handleSelectHistoryItem(item.result, item.imageThumbnail)}
-                  className="p-3 rounded-2xl bg-white/5 hover:bg-white/10 border border-white/5 hover:border-white/15 cursor-pointer transition-all flex items-center gap-4 group"
-                >
-                  {item.imageThumbnail ? (
-                    <img
-                      src={item.imageThumbnail}
-                      alt=""
-                      className="w-14 h-14 rounded-xl object-cover border border-white/10 shrink-0"
-                    />
-                  ) : (
-                    <div className="w-14 h-14 rounded-xl bg-neutral-800 border border-white/10 flex items-center justify-center shrink-0">
-                      <Sparkles className="w-5 h-5 text-neutral-500" />
-                    </div>
-                  )}
-
-                  <div className="flex-1 min-w-0">
-                    <p className="text-xs text-neutral-200 line-clamp-2 font-mono leading-relaxed">
-                      {item.result.masterPrompt}
-                    </p>
-                    <span className="text-[10px] text-neutral-500 mt-1 block">
-                      {new Date(item.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} • Click to view
-                    </span>
-                  </div>
-
-                  <ArrowRight className="w-4 h-4 text-neutral-500 group-hover:text-white transition-colors shrink-0" />
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Guide Modal */}
-      {showGuide && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-neutral-900 border border-white/10 rounded-3xl max-w-lg w-full p-6 shadow-2xl">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="font-bold text-base text-white flex items-center gap-2">
-                <HelpCircle className="w-5 h-5 text-blue-400" />
-                <span>কীভাবে প্রম্পট ব্যবহার করবেন? (User Guide)</span>
-              </h3>
-              <button
-                onClick={() => setShowGuide(false)}
-                className="p-1.5 rounded-lg text-neutral-400 hover:text-white"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            <div className="space-y-4 text-xs text-neutral-300 leading-relaxed">
-              <div className="p-3.5 rounded-xl bg-white/5 border border-white/5">
-                <strong className="text-blue-400 block mb-1">১. Master Prompt (মাস্টার প্রম্পট):</strong>
-                পুরো ছবিটি যেভাবে তৈরি করা হয়েছে (বিষয়, আলো, ব্যাকগ্রাউন্ড, ৮৫মিমি লেন্স, টেক্সচার) হুবহু নকল বা নতুনভাবে বানাতে এটি ব্যবহার করুন।
-              </div>
-
-              <div className="p-3.5 rounded-xl bg-white/5 border border-white/5">
-                <strong className="text-purple-400 block mb-1">২. Subject Swap (অন্য চরিত্র বসাতে):</strong>
-                এই অপশনে মূল পোজ এবং ব্যাকগ্রাউন্ড ঠিক থাকবে, শুধু <code>[Insert Subject / Character Here]</code> লেখাটি বদলে আপনার কাঙ্ক্ষিত চরিত্র (যেমন: "a futuristic astronaut" বা "a cybernetic tiger") বসিয়ে দিন।
-              </div>
-
-              <div className="p-3.5 rounded-xl bg-white/5 border border-white/5">
-                <strong className="text-indigo-400 block mb-1">৩. Style Transfer (আর্ট স্টাইল রিইউজ):</strong>
-                কোনো নির্দিষ্ট মানুষ বা চরিত্র ছাড়াই ছবির আর্ট স্টাইল ও লাইটিং অন্য যেকোনো আইডিয়ার সাথে যোগ করতে পারেন।
-              </div>
-
-              <div className="p-3.5 rounded-xl bg-white/5 border border-white/5">
-                <strong className="text-emerald-400 block mb-1">৪. Midjourney v6 Format:</strong>
-                সরাসরি মিডজার্নি ডিসকর্ডে পেস্ট করার জন্য <code>--ar 16:9 --v 6.1 --style raw</code> ট্যাগ যুক্ত করে দেয়।
-              </div>
-            </div>
-
-            <button
-              onClick={() => setShowGuide(false)}
-              className="w-full mt-6 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-medium text-xs transition-colors"
-            >
-              বুঝেছি (Got it)
-            </button>
-          </div>
         </div>
       )}
 
