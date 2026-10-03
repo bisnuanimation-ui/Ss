@@ -21,6 +21,8 @@ interface FirebaseContextType {
   user: UserProfile | null;
   loading: boolean;
   history: SavedAnalysis[];
+  authError: string | null;
+  setAuthError: (err: string | null) => void;
   signIn: () => Promise<void>;
   logout: () => Promise<void>;
   saveAnalysis: (result: AnalysisResult, imageThumbnail?: string) => Promise<void>;
@@ -35,6 +37,7 @@ const LOCAL_STORAGE_HISTORY_KEY = 'promptvision_history_v1';
 export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
+  const [authError, setAuthError] = useState<string | null>(null);
   const [history, setHistory] = useState<SavedAnalysis[]>(() => {
     try {
       const stored = localStorage.getItem(LOCAL_STORAGE_HISTORY_KEY);
@@ -121,10 +124,19 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   }, []);
 
   const signIn = async () => {
+    setAuthError(null);
     try {
       await signInWithPopup(auth, googleProvider);
-    } catch (error) {
-      console.warn("Sign-in cancelled or closed:", error);
+    } catch (error: any) {
+      console.error("Sign-in execution failed:", error);
+      const errCode = error?.code || '';
+      if (errCode === 'auth/unauthorized-domain') {
+        setAuthError('unauthorized_domain');
+      } else if (errCode === 'auth/popup-blocked') {
+        setAuthError('popup_blocked');
+      } else {
+        setAuthError(error?.message || String(error));
+      }
     }
   };
 
@@ -219,6 +231,8 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       user, 
       loading, 
       history, 
+      authError,
+      setAuthError,
       signIn, 
       logout, 
       saveAnalysis, 

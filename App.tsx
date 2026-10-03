@@ -33,7 +33,17 @@ import { doc, onSnapshot } from 'firebase/firestore';
 import { db } from './firebase';
 
 const App: React.FC = () => {
-  const { user, history, signIn, logout, saveAnalysis, clearHistory, incrementGenerationCount } = useFirebase();
+  const { 
+    user, 
+    history, 
+    signIn, 
+    logout, 
+    saveAnalysis, 
+    clearHistory, 
+    incrementGenerationCount,
+    authError,
+    setAuthError
+  } = useFirebase();
   const [state, setState] = useState<AppState>({
     image: null,
     imageMimeType: null,
@@ -789,6 +799,79 @@ const App: React.FC = () => {
               বুঝেছি (Got it)
             </button>
           </div>
+        </div>
+      )}
+
+      {/* Google Sign-In Auth Error Modal */}
+      {authError && (
+        <div className="fixed inset-0 z-50 bg-black/90 backdrop-blur-md flex items-center justify-center p-4">
+          <motion.div 
+            initial={{ scale: 0.95, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            className="bg-neutral-900 border border-red-500/20 rounded-3xl max-w-lg w-full p-6 text-center relative overflow-hidden shadow-2xl"
+          >
+            <div className="absolute -top-10 -left-10 w-40 h-48 bg-red-500/5 rounded-full blur-[80px] pointer-events-none" />
+            
+            <div className="w-16 h-16 rounded-2xl bg-red-500/15 border border-red-500/30 flex items-center justify-center mx-auto mb-5 text-red-400">
+              <AlertCircle className="w-7 h-7" />
+            </div>
+
+            {authError === 'unauthorized_domain' ? (
+              <>
+                <h3 className="text-lg font-bold text-white tracking-tight">গুগল সাইন-ইন ডোমেইন ত্রুটি! (Unauthorized Domain)</h3>
+                <p className="text-xs text-neutral-300 mt-2.5 leading-relaxed text-left">
+                  আপনার ফায়ারবেস কনসোলে এই ডেভেলপমেন্ট ডোমেনটি অনুমোদিত তালিকায় যোগ করা নেই। সমাধান করার জন্য নিচে দেওয়া ধাপগুলো অনুসরণ করুন:
+                </p>
+
+                <div className="my-4 p-4 rounded-2xl bg-white/5 border border-white/10 space-y-3 text-left">
+                  <p className="text-[11px] font-bold text-red-400">ধাপ ১: নিচের লিঙ্কগুলো কপি করুন:</p>
+                  <div className="space-y-1 bg-black/40 p-2.5 rounded-xl border border-white/5 select-all font-mono text-[10px] text-neutral-300">
+                    <div>ais-dev-iz6v42th2kvc7wjz7jtcit-55654215301.asia-southeast1.run.app</div>
+                    <div>ais-pre-iz6v42th2kvc7wjz7jtcit-55654215301.asia-southeast1.run.app</div>
+                  </div>
+                  
+                  <p className="text-[11px] font-bold text-neutral-300">ধাপ ২: ফায়ারবেস কনসোলে যান:</p>
+                  <p className="text-[10px] text-neutral-400 leading-normal">
+                    **Firebase Console**-এ গিয়ে **Authentication** - **Settings** - **Authorized Domains (অনুমোদিত ডোমেন)**-এ যান এবং উপরের ডোমেন দুটি যোগ (Add Domain) করুন।
+                  </p>
+                </div>
+              </>
+            ) : authError === 'popup_blocked' ? (
+              <>
+                <h3 className="text-lg font-bold text-white tracking-tight">পপআপ উইন্ডো ব্লক করা হয়েছে! (Popup Blocked)</h3>
+                <p className="text-xs text-neutral-300 mt-2.5 leading-relaxed">
+                  আপনার ব্রাউজার নতুন পপআপ উইন্ডো খোলা ব্লক করে রেখেছে। অনুগ্রহ করে ব্রাউজারের সার্চ বারের ডান কোণে ক্লিক করে পপআপ উইন্ডো খোলার অনুমতি (Allow Popups) দিন এবং আবার চেষ্টা করুন।
+                </p>
+              </>
+            ) : (
+              <>
+                <h3 className="text-lg font-bold text-white tracking-tight">গুগল সাইন-ইন করতে ব্যর্থ হয়েছে!</h3>
+                <p className="text-xs text-neutral-300 mt-2.5 leading-relaxed text-left font-mono bg-black/40 p-3 rounded-xl border border-white/5 text-red-400">
+                  {authError}
+                </p>
+              </>
+            )}
+
+            <div className="flex gap-2 mt-5">
+              <button
+                onClick={() => setAuthError(null)}
+                className="flex-1 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-neutral-300 hover:text-white text-xs font-semibold transition-colors"
+              >
+                বন্ধ করুন (Close)
+              </button>
+              {authError === 'unauthorized_domain' && (
+                <a
+                  href="https://console.firebase.google.com/"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex-1 py-2.5 rounded-xl bg-red-600 hover:bg-red-500 text-white font-bold text-xs transition-all flex items-center justify-center gap-1.5"
+                >
+                  <span>Firebase Console</span>
+                  <ExternalLink className="w-3.5 h-3.5" />
+                </a>
+              )}
+            </div>
+          </motion.div>
         </div>
       )}
 
