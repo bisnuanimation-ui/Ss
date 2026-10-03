@@ -239,13 +239,15 @@ const App: React.FC = () => {
             )}
 
             {/* Admin Panel Button */}
-            <button
-              onClick={() => setShowAdminPanel(true)}
-              className="px-3.5 py-1.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 text-xs font-bold text-rose-400 flex items-center gap-1.5 transition-all"
-            >
-              <Shield className="w-3.5 h-3.5 text-rose-400" />
-              <span>🛡️ Admin Panel</span>
-            </button>
+            {user && user.email === 'bisnuanimation@gmail.com' && (
+              <button
+                onClick={() => setShowAdminPanel(true)}
+                className="px-3.5 py-1.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 text-xs font-bold text-rose-400 flex items-center gap-1.5 transition-all"
+              >
+                <Shield className="w-3.5 h-3.5 text-rose-400" />
+                <span>🛡️ Admin Panel</span>
+              </button>
+            )}
 
             <button
               onClick={() => setShowGuide(true)}
@@ -319,13 +321,13 @@ const App: React.FC = () => {
               {!user && (
                 <div className="p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-xs text-amber-300 flex items-center gap-2 max-w-md text-center">
                   <AlertCircle className="w-4 h-4 shrink-0" />
-                  <span> ছবি বিশ্লেষণ করতে অনুগ্রহ করে প্রথমে গুগল সাইন-ইন করুন (৫ বার ফ্রি ট্রায়াল সুযোগ পাবেন)।</span>
+                  <span> ছবি বিশ্লেষণ করতে অনুগ্রহ করে প্রথমে গুগল সাইন-ইন করুন (১০ বার ফ্রি ট্রায়াল সুযোগ পাবেন)।</span>
                 </div>
               )}
 
               {user && (
                 <div className="text-xs text-neutral-400">
-                  আজকের অবশিষ্ট ফ্রি ট্রায়াল: <span className="font-bold text-white">{(5 - (user.dailyGenerations || 0)) < 0 ? 0 : (5 - (user.dailyGenerations || 0))}/5</span>
+                  আজকের অবশিষ্ট ফ্রি ট্রায়াল: <span className="font-bold text-white">{(10 - (user.dailyGenerations || 0)) < 0 ? 0 : (10 - (user.dailyGenerations || 0))}/10</span>
                 </div>
               )}
 
@@ -454,7 +456,7 @@ const App: React.FC = () => {
               <Lock className="w-7 h-7" />
             </div>
 
-            <h3 className="text-xl font-bold text-white tracking-tight">আপনার ৫টি ফ্রি ট্রায়াল লিমিট শেষ!</h3>
+            <h3 className="text-xl font-bold text-white tracking-tight">আপনার ১০টি ফ্রি ট্রায়াল লিমিট শেষ!</h3>
             <p className="text-xs text-neutral-300 mt-2.5 leading-relaxed">
               আজকের ফ্রি ছবি বিশ্লেষণের লিমিট শেষ হয়ে গেছে। আনলিমিটেড ব্যবহার এবং হাই-এন্ড প্রম্পট সার্ভিস চালু রাখতে আজই মাত্র **২০ টাকা** দিয়ে প্রিমিয়াম মেম্বারশিপ কিনুন!
             </p>

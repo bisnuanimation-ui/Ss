@@ -166,8 +166,8 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       dailyCount = 0;
     }
 
-    // Five-generation trial limit
-    if (dailyCount >= 5) {
+    // Ten-generation trial limit
+    if (dailyCount >= 10) {
       return false;
     }
 
