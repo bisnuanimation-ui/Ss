@@ -10,12 +10,17 @@ import {
   AlertCircle,
   X,
   Clock,
-  ArrowRight
+  ArrowRight,
+  Key,
+  ExternalLink,
+  Check,
+  Cpu
 } from 'lucide-react';
 import Header from './components/Header';
 import ImagePreview from './components/ImagePreview';
 import ResultsView from './components/ResultsView';
 import { analyzeImage } from './services/geminiService';
+import { analyzeImageWithDeepSeek } from './services/deepseekService';
 import { AppState, AnalysisResult } from './types';
 import { useFirebase } from './components/FirebaseProvider';
 
@@ -31,6 +36,26 @@ const App: React.FC = () => {
 
   const [showHistory, setShowHistory] = useState(false);
   const [showGuide, setShowGuide] = useState(false);
+  const [showApiKeyModal, setShowApiKeyModal] = useState(false);
+
+  // Active API Provider ('gemini' | 'deepseek')
+  const [activeProvider, setActiveProvider] = useState<'gemini' | 'deepseek'>(() => {
+    return (localStorage.getItem('promptvision_active_provider') as 'gemini' | 'deepseek') || 'gemini';
+  });
+
+  // Gemini API Key
+  const [customApiKey, setCustomApiKey] = useState<string>(() => {
+    return localStorage.getItem('promptvision_custom_api_key') || '';
+  });
+
+  // DeepSeek API Key
+  const [deepseekApiKey, setDeepseekApiKey] = useState<string>(() => {
+    return localStorage.getItem('promptvision_deepseek_api_key') || '';
+  });
+
+  const [tempGeminiKey, setTempGeminiKey] = useState<string>(customApiKey);
+  const [tempDeepseekKey, setTempDeepseekKey] = useState<string>(deepseekApiKey);
+  const [saveSuccess, setSaveSuccess] = useState(false);
 
   const handleFileUpload = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -82,19 +107,36 @@ const App: React.FC = () => {
     setState(prev => ({ ...prev, isAnalyzing: true, error: null }));
 
     try {
-      const result = await analyzeImage(state.image, state.imageMimeType);
+      let result: AnalysisResult;
+
+      if (activeProvider === 'deepseek') {
+        if (!deepseekApiKey) {
+          throw new Error('DEEPSEEK_API_KEY_MISSING');
+        }
+        result = await analyzeImageWithDeepSeek(
+          state.image, 
+          state.imageMimeType, 
+          deepseekApiKey, 
+          customApiKey
+        );
+      } else {
+        result = await analyzeImage(state.image, state.imageMimeType, customApiKey);
+      }
+
       setState(prev => ({ ...prev, result, isAnalyzing: false }));
 
       // Save to recent history
       await saveAnalysis(result, state.image);
     } catch (err: any) {
       console.error("Analysis execution failed:", err);
-      let errorMessage = 'ছবি বিশ্লেষণ ব্যর্থ হয়েছে। অনুগ্রহ করে আবার চেষ্টা করুন (Analysis failed. Please try again).';
+      let errorMessage = 'বিশ্লেষণ ব্যর্থ হয়েছে। অনুগ্রহ করে আবার চেষ্টা করুন (Analysis failed).';
 
-      if (err.message?.includes('QUOTA_EXCEEDED') || err.message?.includes('RESOURCE_EXHAUSTED') || err.status === 429) {
+      if (err.message === 'DEEPSEEK_API_KEY_MISSING') {
+        errorMessage = 'DeepSeek API Key প্রয়োজন: অনুগ্রহ করে উপরে "ফ্রি API কী" সেটিংসে গিয়ে DeepSeek বা OpenRouter কী সেভ করুন।';
+      } else if (err.message?.includes('QUOTA_EXCEEDED') || err.message?.includes('RESOURCE_EXHAUSTED') || err.status === 429) {
         errorMessage = 'কোটা শেষ হয়েছে (Quota Exceeded): অনুগ্রহ করে কিছুক্ষণ অপেক্ষা করে আবার চেষ্টা করুন।';
-      } else if (err.message?.includes('API_KEY_INVALID')) {
-        errorMessage = 'API Key ত্রুটি: Gemini API সংযোগ যাচাই করুন।';
+      } else if (err.message?.includes('API_KEY_INVALID') || err.message?.includes('DEEPSEEK_API_ERROR')) {
+        errorMessage = 'API Key বা মডেল কানেকশন ত্রুটি। অনুগ্রহ করে আপনার এপিআই কী সঠিক কিনা যাচাই করুন।';
       }
 
       setState(prev => ({
@@ -116,6 +158,36 @@ const App: React.FC = () => {
     setShowHistory(false);
   };
 
+  const handleSaveApiKeySettings = () => {
+    const trimmedGemini = tempGeminiKey.trim();
+    const trimmedDeepseek = tempDeepseekKey.trim();
+
+    setCustomApiKey(trimmedGemini);
+    setDeepseekApiKey(trimmedDeepseek);
+
+    localStorage.setItem('promptvision_custom_api_key', trimmedGemini);
+    localStorage.setItem('promptvision_deepseek_api_key', trimmedDeepseek);
+    localStorage.setItem('promptvision_active_provider', activeProvider);
+
+    setSaveSuccess(true);
+    setTimeout(() => {
+      setSaveSuccess(false);
+      setShowApiKeyModal(false);
+    }, 1500);
+  };
+
+  const handleClearGeminiKey = () => {
+    setCustomApiKey('');
+    setTempGeminiKey('');
+    localStorage.removeItem('promptvision_custom_api_key');
+  };
+
+  const handleClearDeepseekKey = () => {
+    setDeepseekApiKey('');
+    setTempDeepseekKey('');
+    localStorage.removeItem('promptvision_deepseek_api_key');
+  };
+
   const isReady = !!state.image && !state.isAnalyzing;
 
   return (
@@ -133,6 +205,27 @@ const App: React.FC = () => {
           </div>
 
           <div className="flex items-center gap-3">
+            {/* Custom Model / API Key Button */}
+            <button
+              onClick={() => {
+                setTempGeminiKey(customApiKey);
+                setTempDeepseekKey(deepseekApiKey);
+                setShowApiKeyModal(true);
+              }}
+              className={`px-3.5 py-1.5 rounded-xl border text-xs font-semibold flex items-center gap-1.5 transition-all ${
+                customApiKey || deepseekApiKey
+                  ? 'bg-gradient-to-r from-emerald-500/10 to-cyan-500/10 text-emerald-400 border-emerald-500/30' 
+                  : 'bg-white/5 hover:bg-white/10 border-white/10 text-neutral-300 hover:text-white'
+              }`}
+            >
+              <Key className="w-3.5 h-3.5 text-emerald-400" />
+              <span>
+                {activeProvider === 'deepseek' 
+                  ? `DeepSeek / deepseek-chat ${deepseekApiKey ? '(Active)' : '(Setup)'}` 
+                  : `Gemini API ${customApiKey ? '(Active)' : '(Free Tier)'}`}
+              </span>
+            </button>
+
             <button
               onClick={() => setShowGuide(true)}
               className="px-3.5 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-xs text-neutral-300 hover:text-white transition-all flex items-center gap-1.5"
@@ -214,12 +307,12 @@ const App: React.FC = () => {
                       <div className="w-1.5 h-1.5 bg-white rounded-full animate-bounce [animation-delay:-0.15s]" />
                       <div className="w-1.5 h-1.5 bg-white rounded-full animate-bounce" />
                     </div>
-                    <span>ছবি বিশ্লেষণ হচ্ছে... (Extracting Prompts)</span>
+                    <span>{activeProvider === 'deepseek' ? 'DeepSeek প্রসেস করছে...' : 'Gemini প্রসেস করছে...'}</span>
                   </>
                 ) : (
                   <>
                     <Wand2 className="w-4 h-4" />
-                    <span>প্রম্পট তৈরি করুন (Generate AI Prompt)</span>
+                    <span>প্রম্পট তৈরি করুন ({activeProvider === 'deepseek' ? 'DeepSeek' : 'Gemini'})</span>
                   </>
                 )}
               </motion.button>
@@ -301,6 +394,165 @@ const App: React.FC = () => {
           </section>
         )}
       </main>
+
+      {/* Model & API Key Settings Modal */}
+      {showApiKeyModal && (
+        <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4">
+          <motion.div 
+            initial={{ scale: 0.95, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            className="bg-neutral-900 border border-white/10 rounded-3xl max-w-xl w-full p-6 shadow-2xl relative overflow-hidden"
+          >
+            <div className="absolute top-0 right-0 w-48 h-48 bg-cyan-500/5 rounded-full blur-3xl pointer-events-none" />
+
+            <div className="flex items-center justify-between mb-4 border-b border-white/5 pb-4">
+              <div className="flex items-center gap-2">
+                <Key className="w-5 h-5 text-cyan-400 animate-pulse" />
+                <h3 className="font-bold text-base text-white">API Model Settings (এপিআই মডেল কনফিগারেশন)</h3>
+              </div>
+              <button
+                onClick={() => setShowApiKeyModal(false)}
+                className="p-1 rounded-lg text-neutral-400 hover:text-white"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="space-y-5">
+              {/* Active Provider Selector */}
+              <div className="space-y-2">
+                <span className="text-xs font-bold text-neutral-400 block uppercase tracking-wider">
+                  Active AI Model (সক্রিয় এপিআই মডেল নির্বাচন করুন):
+                </span>
+                <div className="grid grid-cols-2 gap-3">
+                  <button
+                    onClick={() => setActiveProvider('gemini')}
+                    className={`p-4 rounded-2xl border text-left transition-all ${
+                      activeProvider === 'gemini'
+                        ? 'bg-blue-500/10 border-blue-500 text-white shadow-lg shadow-blue-500/10'
+                        : 'bg-white/5 border-white/5 text-neutral-400 hover:text-white'
+                    }`}
+                  >
+                    <div className="font-bold text-xs flex items-center gap-1.5 mb-1 text-blue-400">
+                      <Sparkles className="w-3.5 h-3.5" />
+                      <span>Google Gemini</span>
+                    </div>
+                    <p className="text-[10px] text-neutral-400 leading-relaxed">
+                      Gemini 2.5/3.8 Flash মডেল। আল্ট্রা-ফাস্ট ও মাল্টিমোডাল ছবি অ্যানালাইসিস।
+                    </p>
+                  </button>
+
+                  <button
+                    onClick={() => setActiveProvider('deepseek')}
+                    className={`p-4 rounded-2xl border text-left transition-all ${
+                      activeProvider === 'deepseek'
+                        ? 'bg-cyan-500/10 border-cyan-500 text-white shadow-lg shadow-cyan-500/10'
+                        : 'bg-white/5 border-white/5 text-neutral-400 hover:text-white'
+                    }`}
+                  >
+                    <div className="font-bold text-xs flex items-center gap-1.5 mb-1 text-cyan-400">
+                      <Cpu className="w-3.5 h-3.5" />
+                      <span>deepseek-chat</span>
+                    </div>
+                    <p className="text-[10px] text-neutral-400 leading-relaxed">
+                      DeepSeek-Chat (OpenRouter / DeepSeek API)। বুদ্ধিমত্তা ও প্রম্পট রাইটিং মাস্টার।
+                    </p>
+                  </button>
+                </div>
+              </div>
+
+              {/* Gemini Section */}
+              <div className="space-y-3 p-4 rounded-2xl bg-white/5 border border-white/5">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-blue-400 flex items-center gap-1">
+                    <Sparkles className="w-3.5 h-3.5" /> Google Gemini API Key:
+                  </span>
+                  <a
+                    href="https://aistudio.google.com/"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-[10px] text-neutral-400 hover:text-blue-400 flex items-center gap-1 font-bold underline"
+                  >
+                    <span>ফ্রি লিঙ্ক</span>
+                    <ExternalLink className="w-2.5 h-2.5" />
+                  </a>
+                </div>
+                <div className="flex gap-2">
+                  <input
+                    type="password"
+                    placeholder="AIzaSy... (Gemini Key)"
+                    value={tempGeminiKey}
+                    onChange={(e) => setTempGeminiKey(e.target.value)}
+                    className="flex-1 bg-black/50 border border-white/10 rounded-xl px-3 py-2 text-xs text-white font-mono placeholder:text-neutral-700 focus:outline-none focus:border-blue-500 transition-colors"
+                  />
+                  {customApiKey && (
+                    <button
+                      onClick={handleClearGeminiKey}
+                      className="px-3 py-2 rounded-xl bg-red-500/10 hover:bg-red-500/25 text-red-400 text-[10px] font-medium transition-colors"
+                    >
+                      Clear
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* DeepSeek Section */}
+              <div className="space-y-3 p-4 rounded-2xl bg-white/5 border border-white/5">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-cyan-400 flex items-center gap-1">
+                    <Cpu className="w-3.5 h-3.5" /> DeepSeek (OpenRouter) Key:
+                  </span>
+                  <a
+                    href="https://openrouter.ai/"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-[10px] text-neutral-400 hover:text-cyan-400 flex items-center gap-1 font-bold underline"
+                  >
+                    <span>ফ্রি OpenRouter লিঙ্ক</span>
+                    <ExternalLink className="w-2.5 h-2.5" />
+                  </a>
+                </div>
+                <div className="flex gap-2">
+                  <input
+                    type="password"
+                    placeholder="sk-or-... / sk-api... (DeepSeek / OpenRouter)"
+                    value={tempDeepseekKey}
+                    onChange={(e) => setTempDeepseekKey(e.target.value)}
+                    className="flex-1 bg-black/50 border border-white/10 rounded-xl px-3 py-2 text-xs text-white font-mono placeholder:text-neutral-700 focus:outline-none focus:border-cyan-500 transition-colors"
+                  />
+                  {deepseekApiKey && (
+                    <button
+                      onClick={handleClearDeepseekKey}
+                      className="px-3 py-2 rounded-xl bg-red-500/10 hover:bg-red-500/25 text-red-400 text-[10px] font-medium transition-colors"
+                    >
+                      Clear
+                    </button>
+                  )}
+                </div>
+                <p className="text-[10px] text-neutral-500 leading-relaxed">
+                  * **deepseek/deepseek-chat** ওপেনরাউটার বা ডিপসিক অফিসিয়াল এপিআই-এর মাধ্যমে চলবে। এটি ছবির মাইক্রো-ডিটেইলস বিশ্লেষণ করতে আমাদের ডাইনামিক হাইব্রিড পার্সিং টেকনিক ব্যবহার করে।
+                </p>
+              </div>
+
+              {saveSuccess && (
+                <div className="text-xs text-emerald-400 font-semibold flex items-center gap-1.5 justify-center py-1">
+                  <Check className="w-4 h-4" />
+                  <span>কনফিগারেশন সফলভাবে সেভ হয়েছে!</span>
+                </div>
+              )}
+
+              <div className="flex gap-2 pt-2 border-t border-white/5">
+                <button
+                  onClick={handleSaveApiKeySettings}
+                  className="flex-1 py-3 rounded-xl bg-gradient-to-r from-emerald-600 to-cyan-600 hover:brightness-110 text-white font-bold text-xs uppercase tracking-wider transition-all"
+                >
+                  সেভ ও সক্রিয় করুন (Save & Activate)
+                </button>
+              </div>
+            </div>
+          </motion.div>
+        </div>
+      )}
 
       {/* History Drawer Modal */}
       {showHistory && (

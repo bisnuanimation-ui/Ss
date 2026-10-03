@@ -19,8 +19,8 @@ import {
   PenTool,
   Type,
   Maximize2,
-  Layers3,
-  Box
+  Box,
+  Compass
 } from 'lucide-react';
 import { AnalysisResult } from '../types';
 
@@ -31,7 +31,7 @@ interface ResultsViewProps {
 }
 
 export const ResultsView: React.FC<ResultsViewProps> = ({ result, onReset, imageUrl }) => {
-  const [activeTab, setActiveTab] = useState<'master' | 'graphic' | 'pose' | 'swap' | 'style' | 'midjourney' | 'short'>(
+  const [activeTab, setActiveTab] = useState<'master' | 'graphic' | 'perspective' | 'fonts' | 'pose' | 'swap' | 'style' | 'midjourney' | 'short'>(
     result.isGraphicDesign ? 'graphic' : 'master'
   );
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
@@ -50,7 +50,7 @@ export const ResultsView: React.FC<ResultsViewProps> = ({ result, onReset, image
       setSelectedPerspectiveBoost('deep three-point forced perspective, character breaking out of frame, layered depth planes');
     } else {
       setActiveTab('master');
-      setSelectedPerspectiveBoost('cinematic wide depth of field, natural vanishing perspective');
+      setSelectedPerspectiveBoost('ground-level upward perspective, natural vanishing lines, expansive depth');
     }
   }, [result]);
 
@@ -68,6 +68,12 @@ export const ResultsView: React.FC<ResultsViewProps> = ({ result, onReset, image
         break;
       case 'master':
         base = result.masterPrompt;
+        break;
+      case 'perspective':
+        base = `Dramatic low-angle ground perspective, ${result.spatialPerspective}, ${result.masterPrompt}`;
+        break;
+      case 'fonts':
+        base = `Graphic poster design featuring typography styles: ${result.identifiedFonts}, ${result.graphicDesignDetails}, ${result.masterPrompt}`;
         break;
       case 'pose':
         base = `Character standing in this exact pose: ${result.exactPoseAndStance}, ${result.cameraAndComposition}, ${result.isGraphicDesign ? 'modern 3D graphic design render' : 'authentic real-world background, photorealistic 8k'}`;
@@ -87,18 +93,10 @@ export const ResultsView: React.FC<ResultsViewProps> = ({ result, onReset, image
     }
 
     const additions: string[] = [];
-    if (selectedGraphicBoost) {
-      additions.push(selectedGraphicBoost);
-    }
-    if (selectedPerspectiveBoost) {
-      additions.push(selectedPerspectiveBoost);
-    }
-    if (selectedFontBoost) {
-      additions.push(selectedFontBoost);
-    }
-    if (selectedPoseLock) {
-      additions.push(selectedPoseLock);
-    }
+    if (selectedGraphicBoost) additions.push(selectedGraphicBoost);
+    if (selectedPerspectiveBoost) additions.push(selectedPerspectiveBoost);
+    if (selectedFontBoost) additions.push(selectedFontBoost);
+    if (selectedPoseLock) additions.push(selectedPoseLock);
 
     if (additions.length > 0) {
       return `${base}, ${additions.join(', ')}`;
@@ -114,16 +112,16 @@ Type: ${result.isGraphicDesign ? 'GRAPHIC DESIGN & RENDER REPLICATION' : 'PHOTOR
 [GRAPHIC DESIGN RENDER DUPLICATE PROMPT (হুবহু গ্রাফিক্স ও ক্যারেক্টার কপি)]
 ${result.graphicDesignPrompt}
 
-[MASTER PROMPT]
+[MASTER PROMPT (WITH FULL CHARACTER, PERSPECTIVE & FONTS)]
 ${getActivePrompt()}
 
-[EXACT STANDING POSE & POSTURE (দাঁড়ানোর নিখুঁত ভঙ্গি)]
+[FULL CHARACTER STANDING POSE & POSTURE (মাথা থেকে পা পর্যন্ত ফুল ক্যারেক্টার)]
 ${result.exactPoseAndStance}
 
-[IDENTIFIED FONTS & TYPOGRAPHY BREAKDOWN (ব্যবহৃত ফন্ট ও টেক্সট স্টাইল)]
+[IDENTIFIED FONTS & TYPOGRAPHY BREAKDOWN (ব্যবহৃত সুনির্দিষ্ট ফন্ট ও টেক্সট স্টাইল)]
 ${result.identifiedFonts}
 
-[DEEP 3D SPATIAL PERSPECTIVE & LAYERING (গভীর পার্সপেক্টিভ ও লেয়ারিং)]
+[GROUND / DEEP FORCED PERSPECTIVE & LAYERING (গ্রাউন্ড/গভীর পার্সপেক্টিভ ও ভ্যানিশিং পয়েন্ট)]
 ${result.spatialPerspective}
 
 [GRAPHIC ELEMENTS & RENDER DETAILS]
@@ -157,7 +155,7 @@ Tags: ${result.suggestedTags.join(', ')}
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `PromptVision-AI-${result.isGraphicDesign ? 'Graphic-Perspective' : 'Prompt'}-${Date.now()}.txt`;
+    link.download = `PromptVision-AI-${result.isGraphicDesign ? 'Graphic-Render' : 'Prompt'}-${Date.now()}.txt`;
     link.click();
     URL.revokeObjectURL(url);
   };
@@ -182,12 +180,12 @@ Tags: ${result.suggestedTags.join(', ')}
 
           <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-semibold bg-indigo-500/15 text-indigo-300 border border-indigo-500/30">
             <Box className="w-3.5 h-3.5 text-indigo-400" />
-            <span>গভীর থ্রিডি পার্সপেক্টিভ ও লেয়ার্ড ডেপথ</span>
+            <span>গ্রাউন্ড / গভীর ৩ডি পার্সপেক্টিভ লক</span>
           </div>
 
           <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-semibold bg-amber-500/15 text-amber-300 border border-amber-500/30">
             <Type className="w-3.5 h-3.5 text-amber-400" />
-            <span>ব্যবহৃত ফন্ট ও টাইপোগ্রাফি স্পেসিফিকেশন</span>
+            <span>ব্যবহৃত সুনির্দিষ্ট ফন্ট ডিটেইলস</span>
           </div>
 
           <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-semibold bg-pink-500/10 text-pink-400 border border-pink-500/20">
@@ -203,7 +201,7 @@ Tags: ${result.suggestedTags.join(', ')}
               <span>{result.isGraphicDesign ? 'Graphic Render & Full Character Prompt' : 'Generated Image Prompt'}</span>
             </h2>
             <p className="text-xs md:text-sm text-neutral-400 mt-1">
-              ডিজাইনে থাকা সম্পূর্ণ ক্যারেক্টারের দাঁড়ানোর পোজ, গভীর ৩ডি পার্সপেক্টিভ, এবং ব্যবহৃত সুনির্দিষ্ট ফন্ট সহ হুবহু প্রম্পট প্রস্তুত।
+              ডিজাইনে থাকা সম্পূর্ণ ক্যারেক্টারের দাঁড়ানোর পোজ, গভীর গ্রাউন্ড ৩ডি পার্সপেক্টিভ, এবং ব্যবহৃত সুনির্দিষ্ট ফন্ট সহ হুবহু প্রম্পট প্রস্তুত।
             </p>
           </div>
 
@@ -256,6 +254,42 @@ Tags: ${result.suggestedTags.join(', ')}
             <PenTool className="w-3.5 h-3.5 text-cyan-300" />
             <span>🎨 Graphic Render Duplicate (ফুল ক্যারেক্টার ও রেন্ডার কপি)</span>
           </button>
+
+          <button
+            onClick={() => setActiveTab('perspective')}
+            className={`px-4 py-2 rounded-xl text-xs font-medium transition-all flex items-center gap-1.5 ${
+              activeTab === 'perspective'
+                ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/25'
+                : 'bg-white/5 text-neutral-400 hover:text-white hover:bg-white/10 border border-white/5'
+            }`}
+          >
+            <Compass className="w-3.5 h-3.5 text-indigo-300" />
+            <span>📐 Ground Perspective (গভীর পার্সপেক্টিভ)</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('fonts')}
+            className={`px-4 py-2 rounded-xl text-xs font-medium transition-all flex items-center gap-1.5 ${
+              activeTab === 'fonts'
+                ? 'bg-amber-600 text-white shadow-lg shadow-amber-500/25'
+                : 'bg-white/5 text-neutral-400 hover:text-white hover:bg-white/10 border border-white/5'
+            }`}
+          >
+            <Type className="w-3.5 h-3.5 text-amber-300" />
+            <span>🔤 Font Specs (ব্যবহৃত ফন্ট ও স্টাইল)</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('pose')}
+            className={`px-4 py-2 rounded-xl text-xs font-medium transition-all ${
+              activeTab === 'pose'
+                ? 'bg-pink-600 text-white shadow-lg shadow-pink-500/20'
+                : 'bg-white/5 text-neutral-400 hover:text-white hover:bg-white/10 border border-white/5'
+            }`}
+          >
+            🧍 Full Character Pose (দাঁড়ানোর ভঙ্গি)
+          </button>
+
           <button
             onClick={() => setActiveTab('master')}
             className={`px-4 py-2 rounded-xl text-xs font-medium transition-all ${
@@ -266,16 +300,7 @@ Tags: ${result.suggestedTags.join(', ')}
           >
             🔥 Master Prompt (Universal)
           </button>
-          <button
-            onClick={() => setActiveTab('pose')}
-            className={`px-4 py-2 rounded-xl text-xs font-medium transition-all ${
-              activeTab === 'pose'
-                ? 'bg-pink-600 text-white shadow-lg shadow-pink-500/20'
-                : 'bg-white/5 text-neutral-400 hover:text-white hover:bg-white/10 border border-white/5'
-            }`}
-          >
-            🧍 Pose Lock (দাঁড়ানোর ভঙ্গি)
-          </button>
+
           <button
             onClick={() => setActiveTab('swap')}
             className={`px-4 py-2 rounded-xl text-xs font-medium transition-all ${
@@ -286,16 +311,7 @@ Tags: ${result.suggestedTags.join(', ')}
           >
             🔄 Subject Swap (একই ডিজাইনে অন্য ক্যারেক্টার)
           </button>
-          <button
-            onClick={() => setActiveTab('style')}
-            className={`px-4 py-2 rounded-xl text-xs font-medium transition-all ${
-              activeTab === 'style'
-                ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/20'
-                : 'bg-white/5 text-neutral-400 hover:text-white hover:bg-white/10 border border-white/5'
-            }`}
-          >
-            🎭 Style Transfer (আর্ট স্টাইল রিইউজ)
-          </button>
+
           <button
             onClick={() => setActiveTab('midjourney')}
             className={`px-4 py-2 rounded-xl text-xs font-medium transition-all ${
@@ -306,16 +322,6 @@ Tags: ${result.suggestedTags.join(', ')}
           >
             ⚡ Midjourney v6 Format
           </button>
-          <button
-            onClick={() => setActiveTab('short')}
-            className={`px-4 py-2 rounded-xl text-xs font-medium transition-all ${
-              activeTab === 'short'
-                ? 'bg-neutral-700 text-white shadow-lg'
-                : 'bg-white/5 text-neutral-400 hover:text-white hover:bg-white/10 border border-white/5'
-            }`}
-          >
-            📝 Short Prompt
-          </button>
         </div>
 
         {/* Tab Description Tip */}
@@ -323,6 +329,16 @@ Tags: ${result.suggestedTags.join(', ')}
           {activeTab === 'graphic' && (
             <span className="text-cyan-300 font-medium">
               💡 Graphic Render Mode: Replicates the complete character head-to-toe, deep 3D perspective layers, specific font typography, and render finish!
+            </span>
+          )}
+          {activeTab === 'perspective' && (
+            <span className="text-indigo-300 font-medium">
+              💡 Deep Perspective Mode: Low-angle upward ground elevation, dynamic vanishing lines, and multi-plane depth!
+            </span>
+          )}
+          {activeTab === 'fonts' && (
+            <span className="text-amber-300 font-medium">
+              💡 Typography Mode: Integrates specific font names (e.g. Bebas Neue, Futura Bold, Space Grotesk) and 3D extruded lettering!
             </span>
           )}
           {activeTab === 'pose' && (
@@ -335,11 +351,6 @@ Tags: ${result.suggestedTags.join(', ')}
               💡 Tip: Replace <code>[Insert Subject / Character Here]</code> with your desired character or product — keeping the exact same graphic layout, 3D depth, and fonts!
             </span>
           )}
-          {activeTab === 'style' && (
-            <span className="text-indigo-300 font-medium">
-              💡 Tip: Combine this style prompt with any other prompt to apply this image's exact lighting, camera, and art mood!
-            </span>
-          )}
           {activeTab === 'midjourney' && (
             <span className="text-sky-300 font-medium">
               💡 Formatted with Midjourney flags: <code>--ar {aspectRatio} --v 6.1 --style raw</code>
@@ -347,7 +358,7 @@ Tags: ${result.suggestedTags.join(', ')}
           )}
           {activeTab === 'master' && (
             <span className="text-neutral-400 font-medium">
-              💡 Complete detailed prompt with precise pose, camera optics, 3D perspective, and complete visual layout.
+              💡 Complete detailed prompt with full character pose, camera optics, 3D perspective, and complete visual layout.
             </span>
           )}
         </div>
@@ -376,13 +387,13 @@ Tags: ${result.suggestedTags.join(', ')}
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-xs font-semibold text-neutral-300 flex items-center gap-1.5 mr-2">
               <Box className="w-3.5 h-3.5 text-indigo-400" />
-              <span>Perspective & 3D Depth (গভীর পার্সপেক্টিভ):</span>
+              <span>Ground / Deep Perspective (গভীর পার্সপেক্টিভ):</span>
             </span>
             {[
-              { label: '✓ 3D Forced Perspective (গভীর পার্সপেক্টিভ)', val: 'deep three-point forced perspective, dramatic vanishing point, dynamic optical depth' },
+              { label: '✓ Ground-Level Forced Perspective', val: 'dramatic ground-level upward forced perspective, expansive vanishing point lines, dynamic depth' },
               { label: '+ Frame Break Pop-Out (ফ্রেম ভেঙে বের হওয়া)', val: 'character breaking through 2D poster frame into 3D foreground space, depth pop-out' },
               { label: '+ Multi-Layer Floating Assets (লেয়ার্ড উপাদান)', val: 'foreground floating glassmorphism panels, midground character focus, background receding grid' },
-              { label: '+ Low-Angle Dynamic Tilt (নিচু কোণ টিল্ট)', val: 'low-angle hero perspective looking upward with expansive spatial ceiling' },
+              { label: '+ Worm\'s-Eye Hero Angle (হিরো অ্যাঙ্গেল)', val: 'low-angle hero perspective looking upward with expansive spatial headroom' },
             ].map((p) => (
               <button
                 key={p.label}
@@ -503,7 +514,7 @@ Tags: ${result.suggestedTags.join(', ')}
 
       {/* Detailed Breakdown Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-        {/* Identified Fonts & Typography (New Hero Card) */}
+        {/* Identified Fonts & Typography (Hero Card) */}
         <div className="bg-neutral-900/80 border border-amber-500/30 rounded-2xl p-5 hover:border-amber-500/50 transition-all flex flex-col justify-between shadow-lg">
           <div>
             <div className="flex items-center gap-2 mb-3">
@@ -511,7 +522,7 @@ Tags: ${result.suggestedTags.join(', ')}
                 <Type className="w-4 h-4" />
               </div>
               <h3 className="text-xs font-bold uppercase tracking-wider text-amber-300">
-                Identified Fonts & Typography (ব্যবহৃত ফন্ট)
+                Identified Fonts & Typography (ব্যবহৃত সুনির্দিষ্ট ফন্ট ও স্টাইল)
               </h3>
             </div>
             <p className="text-xs text-neutral-200 leading-relaxed font-mono">
@@ -523,11 +534,11 @@ Tags: ${result.suggestedTags.join(', ')}
             className="mt-4 text-[11px] text-amber-400 hover:text-amber-300 flex items-center gap-1.5 self-start transition-colors font-medium"
           >
             {copiedKey === 'card-fonts' ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-            <span>Copy Font Specifications</span>
+            <span>Copy Font Specifications (ফন্ট কপি করুন)</span>
           </button>
         </div>
 
-        {/* Spatial Perspective & 3D Layering (New Hero Card) */}
+        {/* Spatial Perspective & 3D Layering (Hero Card) */}
         <div className="bg-neutral-900/80 border border-indigo-500/30 rounded-2xl p-5 hover:border-indigo-500/50 transition-all flex flex-col justify-between shadow-lg">
           <div>
             <div className="flex items-center gap-2 mb-3">
@@ -535,7 +546,7 @@ Tags: ${result.suggestedTags.join(', ')}
                 <Box className="w-4 h-4" />
               </div>
               <h3 className="text-xs font-bold uppercase tracking-wider text-indigo-300">
-                Deep 3D Perspective & Depth (গভীর পার্সপেক্টিভ)
+                Ground / Deep Forced Perspective (গভীর পার্সপেক্টিভ ও ভ্যানিশিং পয়েন্ট)
               </h3>
             </div>
             <p className="text-xs text-neutral-200 leading-relaxed font-mono">
@@ -547,7 +558,31 @@ Tags: ${result.suggestedTags.join(', ')}
             className="mt-4 text-[11px] text-indigo-400 hover:text-indigo-300 flex items-center gap-1.5 self-start transition-colors font-medium"
           >
             {copiedKey === 'card-perspective' ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-            <span>Copy Perspective Specs</span>
+            <span>Copy Perspective Specs (পার্সপেক্টিভ কপি করুন)</span>
+          </button>
+        </div>
+
+        {/* Full Character Standing Pose & Posture */}
+        <div className="bg-neutral-900/80 border border-pink-500/30 rounded-2xl p-5 hover:border-pink-500/50 transition-all flex flex-col justify-between shadow-lg">
+          <div>
+            <div className="flex items-center gap-2 mb-3">
+              <div className="p-2 rounded-xl bg-pink-500/10 text-pink-400 border border-pink-500/20">
+                <Accessibility className="w-4 h-4" />
+              </div>
+              <h3 className="text-xs font-bold uppercase tracking-wider text-pink-300">
+                Full Character Pose (মাথা থেকে পা পর্যন্ত ফুল ক্যারেক্টার)
+              </h3>
+            </div>
+            <p className="text-xs text-neutral-200 leading-relaxed font-mono">
+              {result.exactPoseAndStance}
+            </p>
+          </div>
+          <button
+            onClick={() => copyText(result.exactPoseAndStance, 'card-pose')}
+            className="mt-4 text-[11px] text-pink-400 hover:text-pink-300 flex items-center gap-1.5 self-start transition-colors font-medium"
+          >
+            {copiedKey === 'card-pose' ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+            <span>Copy Full Character Pose (ক্যারেক্টার পোজ কপি করুন)</span>
           </button>
         </div>
 
@@ -572,30 +607,6 @@ Tags: ${result.suggestedTags.join(', ')}
           >
             {copiedKey === 'card-graphics' ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
             <span>Copy Graphic Elements Only</span>
-          </button>
-        </div>
-
-        {/* Full Character Standing Pose & Posture */}
-        <div className="bg-neutral-900/80 border border-pink-500/30 rounded-2xl p-5 hover:border-pink-500/50 transition-all flex flex-col justify-between shadow-lg">
-          <div>
-            <div className="flex items-center gap-2 mb-3">
-              <div className="p-2 rounded-xl bg-pink-500/10 text-pink-400 border border-pink-500/20">
-                <Accessibility className="w-4 h-4" />
-              </div>
-              <h3 className="text-xs font-bold uppercase tracking-wider text-pink-300">
-                Full Character Pose (ফুল ক্যারেক্টারের ভঙ্গি)
-              </h3>
-            </div>
-            <p className="text-xs text-neutral-200 leading-relaxed font-mono">
-              {result.exactPoseAndStance}
-            </p>
-          </div>
-          <button
-            onClick={() => copyText(result.exactPoseAndStance, 'card-pose')}
-            className="mt-4 text-[11px] text-pink-400 hover:text-pink-300 flex items-center gap-1.5 self-start transition-colors font-medium"
-          >
-            {copiedKey === 'card-pose' ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-            <span>Copy Pose Only (শুধু পোজ কপি করুন)</span>
           </button>
         </div>
 
