@@ -1,316 +1,226 @@
-import React, { useState, useEffect } from 'react';
-import { 
-  X, 
-  ShieldAlert, 
-  UserCheck, 
-  UserMinus, 
-  RefreshCw, 
-  Search, 
-  Lock, 
-  Eye, 
-  EyeOff, 
-  User,
-  AlertTriangle
-} from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { collection, query, limit, getDocs, doc, setDoc } from 'firebase/firestore';
 import { db } from '../firebase';
-import { 
-  collection, 
-  getDocs, 
-  doc, 
-  updateDoc
-} from 'firebase/firestore';
 import { UserProfile } from '../types';
+import { Users, FileText, X, Shield, Clock, Key } from 'lucide-react';
+import { motion } from 'motion/react';
 
 interface AdminPanelProps {
   onClose: () => void;
 }
 
-export const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
-  // Password Lock states
-  const [password, setPassword] = useState('');
-  const [isAuthorized, setIsAuthorized] = useState(false);
-  const [passwordError, setPasswordError] = useState(false);
-  const [showPasswordChar, setShowPasswordChar] = useState(false);
+interface UserRecord extends UserProfile {
+  createdAt?: any;
+}
 
-  // Users database states
-  const [users, setUsers] = useState<UserProfile[]>([]);
-  const [loadingUsers, setLoadingUsers] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
+const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
+  const [users, setUsers] = useState<UserRecord[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [updating, setUpdating] = useState<string | null>(null);
 
-  // Authenticate Admin Password (152643)
-  const handleVerifyPassword = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (password === '152643') {
-      setIsAuthorized(true);
-      setPasswordError(false);
-      fetchUsers();
-    } else {
-      setPasswordError(true);
-      setTimeout(() => setPasswordError(false), 2000);
-    }
-  };
-
-  // Fetch all users
-  const fetchUsers = async () => {
-    setLoadingUsers(true);
+  const fetchData = async () => {
+    setLoading(true);
     try {
-      const q = collection(db, 'users');
-      const snap = await getDocs(q);
-      const list: UserProfile[] = [];
-      snap.forEach((d) => {
-        list.push(d.data() as UserProfile);
-      });
-      setUsers(list);
+      const usersSnap = await getDocs(query(collection(db, 'users'), limit(50)));
+      const usersList = usersSnap.docs.map(doc => doc.data() as UserRecord);
+      setUsers(usersList);
     } catch (err) {
-      console.error("Error fetching users database:", err);
+      console.error("Admin data fetch error:", err);
     } finally {
-      setLoadingUsers(false);
+      setLoading(false);
     }
   };
 
-  // Grant/Revoke Premium membership
-  const handleTogglePremium = async (targetUser: UserProfile) => {
-    const isCurrentlyPremium = targetUser.subscription?.status === 'premium';
-    const newStatus = isCurrentlyPremium ? 'free' : 'premium';
-    
+  useEffect(() => {
+    fetchData();
+  }, []);
+
+  const addTime = async (userId: string, months: number) => {
+    setUpdating(userId);
     try {
-      const userRef = doc(db, 'users', targetUser.uid);
-      await updateDoc(userRef, {
-        'subscription.status': newStatus,
-        'subscription.expiresAt': newStatus === 'premium' ? Date.now() + 30 * 24 * 60 * 60 * 1000 : 0
-      });
+      const userRef = doc(db, 'users', userId);
+      const user = users.find(u => u.uid === userId);
+      if (!user) return;
+
+      const now = Date.now();
+      const currentExpiry = user.subscription?.expiresAt || now;
+      const baseTime = currentExpiry < now ? now : currentExpiry;
       
-      setUsers(prev => prev.map(u => {
-        if (u.uid === targetUser.uid) {
-          return {
-            ...u,
-            subscription: {
-              status: newStatus,
-              expiresAt: newStatus === 'premium' ? Date.now() + 30 * 24 * 60 * 60 * 1000 : 0,
-              token: u.subscription?.token || ''
-            }
-          };
+      const newExpiry = baseTime + (months * 30 * 24 * 60 * 60 * 1000);
+
+      await setDoc(userRef, {
+        subscription: {
+          ...user.subscription,
+          status: 'premium',
+          expiresAt: newExpiry
         }
-        return u;
-      }));
+      }, { merge: true });
+
+      await fetchData();
     } catch (err) {
-      console.error("Error updating user subscription:", err);
+      console.error("Failed to add time:", err);
+    } finally {
+      setUpdating(null);
     }
   };
-
-  // Reset daily generation trials to 0
-  const handleResetTrials = async (targetUser: UserProfile) => {
-    try {
-      const userRef = doc(db, 'users', targetUser.uid);
-      await updateDoc(userRef, {
-        dailyGenerations: 0,
-        lastGenerationDate: new Date().toISOString().split('T')[0]
-      });
-      
-      setUsers(prev => prev.map(u => {
-        if (u.uid === targetUser.uid) {
-          return {
-            ...u,
-            dailyGenerations: 0,
-            lastGenerationDate: new Date().toISOString().split('T')[0]
-          };
-        }
-        return u;
-      }));
-    } catch (err) {
-      console.error("Error resetting user trials:", err);
-    }
-  };
-
-  const filteredUsers = users.filter((u) => {
-    const term = searchQuery.toLowerCase();
-    return (
-      u.email?.toLowerCase().includes(term) ||
-      u.displayName?.toLowerCase().includes(term) ||
-      u.uid.toLowerCase().includes(term)
-    );
-  });
-
-  // Render Password Lock Screen initially
-  if (!isAuthorized) {
-    return (
-      <div className="fixed inset-0 z-50 bg-black/95 backdrop-blur-lg flex items-center justify-center p-4">
-        <div className="bg-neutral-900 border border-white/10 rounded-3xl max-w-sm w-full p-6 text-center shadow-2xl relative overflow-hidden">
-          <div className="absolute top-0 right-0 w-48 h-48 bg-rose-500/5 rounded-full blur-[80px] pointer-events-none" />
-          
-          <div className="w-14 h-14 rounded-2xl bg-rose-500/10 border border-rose-500/20 text-rose-400 flex items-center justify-center mx-auto mb-5 shadow-lg">
-            <Lock className="w-6 h-6 animate-pulse" />
-          </div>
-
-          <h3 className="text-lg font-extrabold text-white tracking-tight">এডমিন পাসওয়ার্ড প্রয়োজন</h3>
-          <p className="text-[11px] text-neutral-400 mt-1">প্যানেলে প্রবেশ করতে এডমিন সিকিউরিটি পিন নম্বর প্রদান করুন।</p>
-
-          <form onSubmit={handleVerifyPassword} className="mt-5 space-y-4">
-            <div className="relative">
-              <input
-                type={showPasswordChar ? "text" : "password"}
-                placeholder="পিন নম্বর লিখুন..."
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                maxLength={10}
-                className="w-full bg-black/50 border border-white/10 rounded-xl py-3 pl-4 pr-11 text-center font-mono text-sm tracking-widest text-white focus:outline-none focus:border-rose-500/50 transition-colors"
-                autoFocus
-              />
-              <button
-                type="button"
-                onClick={() => setShowPasswordChar(!showPasswordChar)}
-                className="absolute top-3.5 right-3.5 text-neutral-500 hover:text-white"
-              >
-                {showPasswordChar ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-              </button>
-            </div>
-
-            {passwordError && (
-              <p className="text-[11px] text-red-400 font-bold flex items-center gap-1 justify-center animate-shake">
-                <AlertTriangle className="w-3.5 h-3.5" />
-                <span>ভুল পাসওয়ার্ড! অনুগ্রহ করে আবার চেষ্টা করুন।</span>
-              </p>
-            )}
-
-            <div className="flex gap-2 pt-1">
-              <button
-                type="button"
-                onClick={onClose}
-                className="flex-1 py-2.5 rounded-xl bg-white/5 border border-white/10 text-neutral-400 hover:text-white text-xs font-semibold transition-colors"
-              >
-                বাতিল করুন
-              </button>
-              <button
-                type="submit"
-                className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-rose-600 to-pink-600 hover:brightness-110 text-white font-bold text-xs transition-all"
-              >
-                প্রবেশ করুন
-              </button>
-            </div>
-          </form>
-        </div>
-      </div>
-    );
-  }
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/90 backdrop-blur-md flex items-center justify-center p-4">
-      <div className="bg-neutral-900 border border-white/10 rounded-3xl max-w-4xl w-full h-[85vh] flex flex-col shadow-2xl overflow-hidden relative">
-        <div className="absolute top-0 right-0 w-96 h-96 bg-blue-500/5 rounded-full blur-[120px] pointer-events-none" />
-
-        {/* Modal Header */}
-        <div className="p-6 border-b border-white/10 flex items-center justify-between shrink-0 bg-neutral-900/80 backdrop-blur-md">
-          <div className="flex items-center gap-2.5">
-            <div className="p-2 rounded-xl bg-gradient-to-tr from-rose-600 to-pink-500 text-white shadow-lg">
-              <ShieldAlert className="w-5 h-5" />
+    <div className="fixed inset-0 bg-black/95 backdrop-blur-3xl z-[100] flex items-center justify-center p-4 sm:p-12 font-sans">
+      <motion.div 
+        initial={{ opacity: 0, scale: 0.95, y: 20 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        className="bg-[#080808] border border-white/10 rounded-[3rem] w-full max-w-6xl max-h-[90vh] overflow-hidden flex flex-col shadow-[0_0_150px_rgba(0,0,0,0.8)]"
+      >
+        <div className="p-10 border-b border-white/5 flex items-center justify-between">
+          <div>
+            <div className="flex items-center gap-3 mb-1">
+              <Shield className="w-5 h-5 text-blue-500" />
+              <h2 className="text-3xl font-black text-white uppercase tracking-tighter italic">Admin System</h2>
             </div>
-            <div>
-              <h3 className="font-extrabold text-base text-white tracking-tight">Admin Dashboard (পাসওয়ার্ড সুরক্ষিত)</h3>
-              <p className="text-[10px] text-neutral-400 mt-0.5">প্রিমিয়াম মেম্বারশিপ এবং সার্বজনীন ট্রায়াল কন্ট্রোল</p>
-            </div>
+            <p className="text-[10px] text-gray-500 font-bold uppercase tracking-[0.3em]">User Authorization & Subscription Management</p>
           </div>
-          <button
+          <button 
             onClick={onClose}
-            className="p-2 rounded-xl bg-white/5 border border-white/10 text-neutral-400 hover:text-white transition-all"
+            className="w-14 h-14 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center hover:bg-white/10 transition-all hover:scale-110 active:scale-95"
           >
-            <X className="w-4 h-4" />
+            <X className="w-6 h-6 text-white" />
           </button>
         </div>
 
-        {/* Admin Tabs */}
-        <div className="flex bg-black/20 border-b border-white/10 px-6 shrink-0 gap-4">
-          <div className="py-3 text-xs font-extrabold border-b-2 border-rose-500 text-white flex items-center gap-2">
-            <User className="w-4 h-4" />
-            <span>ইউজার ডাটাবেজ ({users.length})</span>
-          </div>
-        </div>
-
-        {/* Main Tab Views */}
-        <div className="flex-1 overflow-hidden flex flex-col p-6">
-          <div className="flex-1 flex flex-col overflow-hidden">
-            {/* Search user database */}
-            <div className="relative mb-4 shrink-0">
-              <Search className="w-4 h-4 text-neutral-500 absolute top-3.5 left-3.5" />
-              <input
-                type="text"
-                placeholder="ইউজার বা ইমেল সার্চ করুন..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full bg-white/5 border border-white/10 rounded-2xl py-3 pl-11 pr-4 text-xs text-white placeholder:text-neutral-500 focus:outline-none focus:border-white/20 transition-all"
-              />
+        <div className="flex-1 overflow-y-auto p-10">
+          {loading ? (
+            <div className="flex flex-col items-center justify-center h-96 gap-4">
+              <div className="w-10 h-10 border-4 border-white/5 border-t-blue-500 rounded-full animate-spin"></div>
+              <p className="text-[10px] text-gray-500 font-black uppercase tracking-widest">Scanning Registry...</p>
             </div>
-
-            {/* Users scroll list */}
-            <div className="flex-1 overflow-y-auto space-y-3 pr-1">
-              {loadingUsers ? (
-                <div className="text-center py-12 text-xs text-neutral-400">Loading user database...</div>
-              ) : filteredUsers.length === 0 ? (
-                <div className="text-center py-12 text-xs text-neutral-500">কোনো ইউজার খুঁজে পাওয়া যায়নি।</div>
-              ) : (
-                filteredUsers.map((item) => (
-                  <div
-                    key={item.uid}
-                    className="p-4 rounded-2xl bg-white/5 border border-white/5 flex flex-col sm:flex-row sm:items-center justify-between gap-4"
-                  >
-                    <div className="flex items-center gap-3">
-                      {item.photoURL ? (
-                        <img src={item.photoURL} alt="" className="w-10 h-10 rounded-full border border-white/10 object-cover" />
-                      ) : (
-                        <div className="w-10 h-10 rounded-full bg-neutral-800 flex items-center justify-center font-bold text-xs text-neutral-400">
-                          {item.displayName?.substring(0, 1) || 'U'}
-                        </div>
-                      )}
-
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-1.5 flex-wrap">
-                          <span className="font-bold text-xs text-white truncate max-w-[150px]">{item.displayName}</span>
-                          {item.subscription?.status === 'premium' ? (
-                            <span className="px-1.5 py-0.5 rounded text-[8px] font-bold bg-amber-500/10 text-amber-400 border border-amber-500/20 uppercase">
-                              Premium
-                            </span>
-                          ) : (
-                            <span className="px-1.5 py-0.5 rounded text-[8px] font-bold bg-neutral-800 text-neutral-400 uppercase">
-                              Free
-                            </span>
-                          )}
-                        </div>
-                        <p className="text-[10px] text-neutral-400 truncate mt-0.5">{item.email}</p>
-                        <p className="text-[10px] text-neutral-500 mt-1">
-                          আজকের ব্যবহার: <span className="text-blue-400 font-bold">{item.dailyGenerations || 0}/10</span>
-                        </p>
-                      </div>
+          ) : (
+            <div className="space-y-8">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div className="bg-gradient-to-br from-white/[0.03] to-transparent border border-white/5 p-8 rounded-[2rem] hover:border-white/10 transition-colors group">
+                  <div className="flex items-center gap-4 mb-6">
+                    <div className="w-12 h-12 rounded-2xl bg-blue-500/10 flex items-center justify-center group-hover:scale-110 transition-transform">
+                      <Users className="w-6 h-6 text-blue-500" />
                     </div>
-
-                    {/* Actions */}
-                    <div className="flex items-center gap-1.5 shrink-0 self-end sm:self-auto">
-                      <button
-                        onClick={() => handleTogglePremium(item)}
-                        className={`px-3 py-1.5 rounded-xl font-bold text-[10px] transition-all flex items-center gap-1 ${
-                          item.subscription?.status === 'premium'
-                            ? 'bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-red-500/20'
-                            : 'bg-amber-500/15 text-amber-400 border border-amber-500/30 hover:bg-amber-500/30'
-                        }`}
-                      >
-                        {item.subscription?.status === 'premium' ? <UserMinus className="w-3.5 h-3.5" /> : <UserCheck className="w-3.5 h-3.5" />}
-                        <span>{item.subscription?.status === 'premium' ? 'Free করুন' : 'Premium দিন'}</span>
-                      </button>
-
-                      <button
-                        onClick={() => handleResetTrials(item)}
-                        title="Reset Trials"
-                        className="p-1.5 rounded-xl bg-white/5 border border-white/5 text-neutral-400 hover:text-white transition-colors"
-                      >
-                        <RefreshCw className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
+                    <h3 className="text-xs font-black text-gray-400 uppercase tracking-[0.2em]">Registered Users</h3>
                   </div>
-                ))
-              )}
+                  <p className="text-5xl font-black text-white tracking-tighter italic">{users.length}</p>
+                </div>
+                
+                <div className="bg-gradient-to-br from-white/[0.03] to-transparent border border-white/5 p-8 rounded-[2rem] hover:border-white/10 transition-colors group">
+                  <div className="flex items-center gap-4 mb-6">
+                    <div className="w-12 h-12 rounded-2xl bg-purple-500/10 flex items-center justify-center group-hover:scale-110 transition-transform">
+                      <Clock className="w-6 h-6 text-purple-500" />
+                    </div>
+                    <h3 className="text-xs font-black text-gray-400 uppercase tracking-[0.2em]">Active Subs</h3>
+                  </div>
+                  <p className="text-5xl font-black text-white tracking-tighter italic">
+                    {users.filter(u => u.subscription?.status === 'premium' && u.subscription.expiresAt > Date.now()).length}
+                  </p>
+                </div>
+
+                <div className="bg-gradient-to-br from-white/[0.03] to-transparent border border-white/5 p-8 rounded-[2rem] hover:border-white/10 transition-colors group">
+                  <div className="flex items-center gap-4 mb-6">
+                    <div className="w-12 h-12 rounded-2xl bg-green-500/10 flex items-center justify-center group-hover:scale-110 transition-transform">
+                      <Key className="w-6 h-6 text-green-500" />
+                    </div>
+                    <h3 className="text-xs font-black text-gray-400 uppercase tracking-[0.2em]">Access Tokens</h3>
+                  </div>
+                  <p className="text-5xl font-black text-white tracking-tighter italic">SECURE</p>
+                </div>
+              </div>
+
+              <div className="bg-white/[0.01] border border-white/5 rounded-[2rem] overflow-hidden">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left">
+                    <thead>
+                      <tr className="bg-white/[0.03] text-[10px] uppercase font-black tracking-[0.3em] text-gray-500">
+                        <th className="px-8 py-6">Identity</th>
+                        <th className="px-8 py-6">Unique Token</th>
+                        <th className="px-8 py-6">Status</th>
+                        <th className="px-8 py-6">Authorization Control</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-white/5">
+                      {users.map((u, i) => {
+                        const isPremium = u.subscription?.status === 'premium' && u.subscription.expiresAt > Date.now();
+                        const expiryDate = u.subscription?.expiresAt ? new Date(u.subscription.expiresAt).toLocaleDateString() : 'None';
+                        
+                        return (
+                          <tr key={i} className="group hover:bg-white/[0.01] transition-colors">
+                            <td className="px-8 py-6">
+                              <div className="flex items-center gap-4">
+                                <div className="relative">
+                                  <img src={u.photoURL || ''} alt="" className="w-10 h-10 rounded-2xl bg-white/5 border border-white/10" />
+                                  <div className={`absolute -bottom-1 -right-1 w-3 h-3 rounded-full border-2 border-[#080808] ${u.role === 'admin' ? 'bg-blue-500' : 'bg-gray-700'}`} />
+                                </div>
+                                <div>
+                                  <p className="text-sm font-bold text-white tracking-tight">{u.displayName}</p>
+                                  <p className="text-[10px] text-gray-600 font-medium">{u.email}</p>
+                                </div>
+                              </div>
+                            </td>
+                            <td className="px-8 py-6">
+                              <div className="flex items-center gap-2">
+                                <div className="px-3 py-1.5 bg-white/5 border border-white/10 rounded-xl">
+                                  <code className="text-[10px] font-mono text-blue-400 select-all">{u.subscription?.token || 'N/A'}</code>
+                                </div>
+                              </div>
+                            </td>
+                            <td className="px-8 py-6">
+                              <div className="space-y-1">
+                                <span className={`text-[9px] font-black uppercase px-2 py-1 rounded-md tracking-widest ${isPremium ? 'bg-green-500/10 text-green-500 border border-green-500/20' : 'bg-red-500/10 text-red-500 border border-red-500/20'}`}>
+                                  {isPremium ? 'PREMIUM' : 'INACTIVE'}
+                                </span>
+                                {isPremium && <p className="text-[9px] text-gray-500 font-bold uppercase mt-1">Exp: {expiryDate}</p>}
+                              </div>
+                            </td>
+                            <td className="px-8 py-6">
+                              <div className="flex items-center gap-2">
+                                <button
+                                  disabled={updating === u.uid}
+                                  onClick={() => addTime(u.uid, 1)}
+                                  className="px-4 py-2 bg-white/5 border border-white/10 rounded-xl text-[9px] font-black uppercase text-white hover:bg-white hover:text-black transition-all disabled:opacity-50"
+                                >
+                                  +1 Mon
+                                </button>
+                                <button
+                                  disabled={updating === u.uid}
+                                  onClick={() => addTime(u.uid, 3)}
+                                  className="px-4 py-2 bg-white/5 border border-white/10 rounded-xl text-[9px] font-black uppercase text-white hover:bg-white hover:text-black transition-all disabled:opacity-50"
+                                >
+                                  +3 Mon
+                                </button>
+                                <button
+                                  disabled={updating === u.uid}
+                                  onClick={() => addTime(u.uid, 12)}
+                                  className="px-4 py-2 bg-blue-500 border border-blue-500/20 rounded-xl text-[9px] font-black uppercase text-white hover:bg-blue-600 transition-all disabled:opacity-50"
+                                >
+                                  +1 Year
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
             </div>
+          )}
+        </div>
+        
+        <div className="p-8 bg-black border-t border-white/5 flex items-center justify-between">
+          <p className="text-[10px] text-gray-700 font-black uppercase tracking-[0.5em]">Vision Core v5.1 / Unified Access Control</p>
+          <div className="flex items-center gap-2">
+            <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse shadow-[0_0_10px_rgba(34,197,94,0.5)]"></div>
+            <p className="text-[9px] text-gray-500 font-black uppercase tracking-widest">Service Operational</p>
           </div>
         </div>
-      </div>
+      </motion.div>
     </div>
   );
 };
+
 export default AdminPanel;
+

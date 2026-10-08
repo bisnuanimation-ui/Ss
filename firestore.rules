@@ -1,12 +1,12 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // 1. Global Safety Net
+    // 0. Global Safety Net
     match /{document=**} {
       allow read, write: if false;
     }
 
-    // Hardened Helper Primitives
+    // Helper Functions
     function isSignedIn() {
       return request.auth != null;
     }
@@ -15,50 +15,30 @@ service cloud.firestore {
       return isSignedIn() && request.auth.uid == userId;
     }
 
-    // Bootstrapped Admin check
-    function isAdmin() {
-      return isSignedIn() && (
-        request.auth.token.email == 'bisnuanimation@gmail.com' || 
-        exists(/databases/$(database)/documents/admins/$(request.auth.uid))
-      );
-    }
-
-    function isValidId(id) {
-      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
-    }
-
-    // Connection testing
+    // Test document for connection checks
     match /test/{docId} {
       allow read: if true;
     }
 
-    // Admins collection
+    // Admins Collection (Read only for authenticated users)
     match /admins/{uid} {
       allow read: if isSignedIn();
-      allow write: if isAdmin();
+      allow write: if false;
     }
 
-    // Global Admin-Configured APIs
-    match /config/{docId} {
-      allow get: if isSignedIn();
-      allow list, create, update, delete: if isAdmin();
-    }
-
-    // Users Collection (Profiles, Trials, & Roles)
+    // Users Collection
     match /users/{uid} {
-      allow get: if isOwner(uid) || isAdmin();
-      allow list: if isOwner(uid) || isAdmin();
-      
-      // Enforce schema integrity on user creation & updates
-      allow create, update: if (isOwner(uid) || isAdmin()) && (
-        request.resource.data.keys().hasAll(['uid', 'email'])
-      );
-      
-      allow delete: if isAdmin();
+      allow get: if isOwner(uid);
+      allow list: if isOwner(uid);
+      allow create, update: if isOwner(uid);
+      allow delete: if false;
 
-      // User Analyses
+      // Analyses Subcollection
       match /analyses/{analysisId} {
-        allow read, create, update, delete: if isOwner(uid) || isAdmin();
+        allow read: if isOwner(uid);
+        allow create: if isOwner(uid);
+        allow update: if isOwner(uid);
+        allow delete: if isOwner(uid);
       }
     }
   }

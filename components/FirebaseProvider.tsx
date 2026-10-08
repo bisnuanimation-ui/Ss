@@ -12,7 +12,7 @@ import {
   serverTimestamp,
   collection,
   addDoc,
-  onSnapshot
+  getDocFromServer
 } from 'firebase/firestore';
 import { auth, db, googleProvider } from '../firebase';
 import { UserProfile, AnalysisResult, SavedAnalysis } from '../types';
@@ -21,13 +21,10 @@ interface FirebaseContextType {
   user: UserProfile | null;
   loading: boolean;
   history: SavedAnalysis[];
-  authError: string | null;
-  setAuthError: (err: string | null) => void;
   signIn: () => Promise<void>;
   logout: () => Promise<void>;
   saveAnalysis: (result: AnalysisResult, imageThumbnail?: string) => Promise<void>;
   clearHistory: () => void;
-  incrementGenerationCount: () => Promise<boolean>; // Returns true if allowed, false if limit exceeded
 }
 
 const FirebaseContext = createContext<FirebaseContextType | undefined>(undefined);
@@ -36,8 +33,7 @@ const LOCAL_STORAGE_HISTORY_KEY = 'promptvision_history_v1';
 
 export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<UserProfile | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [authError, setAuthError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
   const [history, setHistory] = useState<SavedAnalysis[]>(() => {
     try {
       const stored = localStorage.getItem(LOCAL_STORAGE_HISTORY_KEY);
@@ -47,96 +43,47 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     }
   });
 
-  // Listen for auth state and user profile updates in real-time!
+  // Listen for auth state
   useEffect(() => {
-    setLoading(true);
-    let unsubscribeSnapshot: (() => void) | null = null;
-
-    const unsubscribeAuth = onAuthStateChanged(auth, async (firebaseUser) => {
-      if (unsubscribeSnapshot) {
-        unsubscribeSnapshot();
-        unsubscribeSnapshot = null;
-      }
-
+    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       if (firebaseUser) {
-        const defaultProfile: UserProfile = {
+        const userProfile: UserProfile = {
           uid: firebaseUser.uid,
           email: firebaseUser.email || '',
           displayName: firebaseUser.displayName || 'Creator',
           photoURL: firebaseUser.photoURL || '',
-          role: firebaseUser.email === 'bisnuanimation@gmail.com' ? 'admin' : 'user',
-          subscription: {
-            status: 'free',
-            expiresAt: 0,
-            token: ''
-          },
-          dailyGenerations: 0,
-          lastGenerationDate: new Date().toISOString().split('T')[0]
+          role: 'user',
         };
 
-        // Create document if it doesn't exist yet
-        const userDocRef = doc(db, 'users', firebaseUser.uid);
+        setUser(userProfile);
+
+        // Attempt silent sync to Firestore without blocking the app if rules are restrictive
         try {
+          const userDocRef = doc(db, 'users', firebaseUser.uid);
           const snap = await getDoc(userDocRef);
           if (!snap.exists()) {
             await setDoc(userDocRef, {
-              ...defaultProfile,
+              ...userProfile,
               createdAt: serverTimestamp(),
             }, { merge: true });
           }
         } catch (err) {
-          console.warn("Error creating user profile:", err);
+          // Gracefully swallow permissions or network warnings during silent sync
+          console.warn("User profile background sync note:", err);
         }
-
-        // Establish real-time listener on the user's document
-        unsubscribeSnapshot = onSnapshot(userDocRef, (docSnap) => {
-          if (docSnap.exists()) {
-            const data = docSnap.data();
-            setUser({
-              uid: firebaseUser.uid,
-              email: firebaseUser.email || '',
-              displayName: firebaseUser.displayName || 'Creator',
-              photoURL: firebaseUser.photoURL || '',
-              role: data.role || (firebaseUser.email === 'bisnuanimation@gmail.com' ? 'admin' : 'user'),
-              subscription: data.subscription || { status: 'free', expiresAt: 0, token: '' },
-              dailyGenerations: data.dailyGenerations ?? 0,
-              lastGenerationDate: data.lastGenerationDate ?? ''
-            });
-          } else {
-            setUser(defaultProfile);
-          }
-          setLoading(false);
-        }, (error) => {
-          console.warn("User onSnapshot listener error:", error);
-          setUser(defaultProfile);
-          setLoading(false);
-        });
       } else {
         setUser(null);
-        setLoading(false);
       }
     });
 
-    return () => {
-      unsubscribeAuth();
-      if (unsubscribeSnapshot) unsubscribeSnapshot();
-    };
+    return () => unsubscribe();
   }, []);
 
   const signIn = async () => {
-    setAuthError(null);
     try {
       await signInWithPopup(auth, googleProvider);
-    } catch (error: any) {
-      console.error("Sign-in execution failed:", error);
-      const errCode = error?.code || '';
-      if (errCode === 'auth/unauthorized-domain') {
-        setAuthError('unauthorized_domain');
-      } else if (errCode === 'auth/popup-blocked') {
-        setAuthError('popup_blocked');
-      } else {
-        setAuthError(error?.message || String(error));
-      }
+    } catch (error) {
+      console.warn("Sign-in cancelled or closed:", error);
     }
   };
 
@@ -147,42 +94,6 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     } catch (error) {
       console.error("Logout failed:", error);
     }
-  };
-
-  const incrementGenerationCount = async (): Promise<boolean> => {
-    if (!user) return true; // Let non-logged in or guest user rely on local key if needed, or enforce login
-
-    // Admin has unlimited trials
-    if (user.role === 'admin') return true;
-
-    // Premium users have unlimited trials
-    if (user.subscription?.status === 'premium') return true;
-
-    const todayStr = new Date().toISOString().split('T')[0];
-    let dailyCount = user.dailyGenerations || 0;
-    const lastDate = user.lastGenerationDate || '';
-
-    if (lastDate !== todayStr) {
-      dailyCount = 0;
-    }
-
-    // Ten-generation trial limit
-    if (dailyCount >= 10) {
-      return false;
-    }
-
-    // Save incremented count
-    try {
-      const userDocRef = doc(db, 'users', user.uid);
-      await setDoc(userDocRef, {
-        dailyGenerations: dailyCount + 1,
-        lastGenerationDate: todayStr
-      }, { merge: true });
-    } catch (err) {
-      console.warn("Could not save generation increment on cloud:", err);
-    }
-
-    return true;
   };
 
   const saveAnalysis = async (result: AnalysisResult, imageThumbnail?: string) => {
@@ -227,18 +138,7 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   };
 
   return (
-    <FirebaseContext.Provider value={{ 
-      user, 
-      loading, 
-      history, 
-      authError,
-      setAuthError,
-      signIn, 
-      logout, 
-      saveAnalysis, 
-      clearHistory,
-      incrementGenerationCount
-    }}>
+    <FirebaseContext.Provider value={{ user, loading, history, signIn, logout, saveAnalysis, clearHistory }}>
       {children}
     </FirebaseContext.Provider>
   );

@@ -1,30 +1,26 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   Sparkles, 
+  LogIn, 
+  LogOut, 
+  History, 
   Wand2, 
   HelpCircle, 
   AlertCircle,
   X,
   Clock,
-  ArrowRight,
-  Shield,
-  MessageSquare,
-  Lock,
-  Eye,
-  EyeOff,
-  AlertTriangle
+  ArrowRight
 } from 'lucide-react';
 import Header from './components/Header';
 import ImagePreview from './components/ImagePreview';
 import ResultsView from './components/ResultsView';
-import { AdminPanel } from './components/AdminPanel';
-import { autoDetectAndAnalyze } from './services/aiService';
+import { analyzeImage } from './services/geminiService';
 import { AppState, AnalysisResult } from './types';
-import { doc, onSnapshot } from 'firebase/firestore';
-import { db } from './firebase';
+import { useFirebase } from './components/FirebaseProvider';
 
 const App: React.FC = () => {
+  const { user, history, signIn, logout, saveAnalysis, clearHistory } = useFirebase();
   const [state, setState] = useState<AppState>({
     image: null,
     imageMimeType: null,
@@ -35,56 +31,6 @@ const App: React.FC = () => {
 
   const [showHistory, setShowHistory] = useState(false);
   const [showGuide, setShowGuide] = useState(false);
-  const [showAdminPanel, setShowAdminPanel] = useState(false);
-  const [showUpgradeModal, setShowUpgradeModal] = useState(false);
-
-  // Admin password login states
-  const [showAdminLoginModal, setShowAdminLoginModal] = useState(false);
-  const [adminPassword, setAdminPassword] = useState('');
-  const [adminPasswordError, setAdminPasswordError] = useState(false);
-  const [showPasswordChar, setShowPasswordChar] = useState(false);
-
-  // Local storage history state
-  const [history, setHistory] = useState<any[]>(() => {
-    try {
-      const stored = localStorage.getItem('promptvision_history_v1');
-      return stored ? JSON.parse(stored) : [];
-    } catch {
-      return [];
-    }
-  });
-
-  // Track if current session is authorized as Admin (unlimited trials)
-  const [isAdminSession, setIsAdminSession] = useState<boolean>(() => {
-    return localStorage.getItem('promptvision_admin_session') === 'true';
-  });
-
-  // Track daily trial generations for guests (No Login needed)
-  const [guestTrials, setGuestTrials] = useState<number>(() => {
-    const todayStr = new Date().toISOString().split('T')[0];
-    const savedDate = localStorage.getItem('promptvision_guest_date') || '';
-    if (savedDate !== todayStr) {
-      localStorage.setItem('promptvision_guest_date', todayStr);
-      localStorage.setItem('promptvision_guest_trials', '0');
-      return 0;
-    }
-    return parseInt(localStorage.getItem('promptvision_guest_trials') || '0', 10);
-  });
-
-  // Central global key configured by Admin from Firestore
-  const [globalConfig, setGlobalConfig] = useState<any>(null);
-
-  // Real-time listener for Global Configurations from Firestore
-  useEffect(() => {
-    const unsub = onSnapshot(doc(db, 'config', 'global'), (snap) => {
-      if (snap.exists()) {
-        setGlobalConfig(snap.data());
-      }
-    }, (err) => {
-      console.warn("Global config load note:", err);
-    });
-    return () => unsub();
-  }, []);
 
   const handleFileUpload = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -133,65 +79,22 @@ const App: React.FC = () => {
   const handleAnalyze = async () => {
     if (!state.image || !state.imageMimeType) return;
 
-    // Enforce 3 free trials for guests
-    if (!isAdminSession && guestTrials >= 3) {
-      setShowUpgradeModal(true);
-      return;
-    }
-
     setState(prev => ({ ...prev, isAnalyzing: true, error: null }));
 
     try {
-      let result: AnalysisResult;
-
-      // Global central key configured strictly by Admin
-      const finalApiKey = globalConfig?.apiKey || (import.meta as any).env?.VITE_GEMINI_API_KEY;
-
-      if (!finalApiKey) {
-        throw new Error('API_KEY_MISSING');
-      }
-
-      result = await autoDetectAndAnalyze(
-        state.image, 
-        state.imageMimeType, 
-        finalApiKey, 
-        (import.meta as any).env?.VITE_GEMINI_API_KEY
-      );
-
+      const result = await analyzeImage(state.image, state.imageMimeType);
       setState(prev => ({ ...prev, result, isAnalyzing: false }));
 
-      // Save to guest local trials if not in Admin Session
-      if (!isAdminSession) {
-        const nextTrials = guestTrials + 1;
-        setGuestTrials(nextTrials);
-        localStorage.setItem('promptvision_guest_trials', String(nextTrials));
-      }
-
-      // Save to local history
-      const newHistoryItem = {
-        id: `analysis_${Date.now()}`,
-        timestamp: Date.now(),
-        imageThumbnail: state.image,
-        result
-      };
-      setHistory(prev => {
-        const updated = [newHistoryItem, ...prev].slice(0, 20);
-        localStorage.setItem('promptvision_history_v1', JSON.stringify(updated));
-        return updated;
-      });
-
+      // Save to recent history
+      await saveAnalysis(result, state.image);
     } catch (err: any) {
       console.error("Analysis execution failed:", err);
-      let errorMessage = 'বিশ্লেষণ ব্যর্থ হয়েছে। অনুগ্রহ করে আবার চেষ্টা করুন (Analysis failed).';
+      let errorMessage = 'ছবি বিশ্লেষণ ব্যর্থ হয়েছে। অনুগ্রহ করে আবার চেষ্টা করুন (Analysis failed. Please try again).';
 
-      if (err.message === 'API_KEY_MISSING') {
-        errorMessage = 'সেন্ট্রাল এপিআই কী অনুপস্থিত: অনুগ্রহ করে এডমিনকে প্যানেলে একটি এপিআই কী সেট করতে বলুন।';
-      } else if (err.message?.includes('QUOTA_EXCEEDED') || err.message?.includes('RESOURCE_EXHAUSTED') || err.status === 429) {
+      if (err.message?.includes('QUOTA_EXCEEDED') || err.message?.includes('RESOURCE_EXHAUSTED') || err.status === 429) {
         errorMessage = 'কোটা শেষ হয়েছে (Quota Exceeded): অনুগ্রহ করে কিছুক্ষণ অপেক্ষা করে আবার চেষ্টা করুন।';
       } else if (err.message?.includes('API_KEY_INVALID')) {
-        errorMessage = 'API Key ত্রুটি: এপিআই কী-টি ভুল বা নিষ্ক্রিয়। দয়া করে সঠিক কী চেক করুন।';
-      } else {
-        errorMessage = `বিশ্লেষণ ব্যর্থ হয়েছে (Details): ${err.message || err}`;
+        errorMessage = 'API Key ত্রুটি: Gemini API সংযোগ যাচাই করুন।';
       }
 
       setState(prev => ({
@@ -200,25 +103,6 @@ const App: React.FC = () => {
         error: errorMessage,
       }));
     }
-  };
-
-  const handleAdminVerify = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (adminPassword === '152643') {
-      setIsAdminSession(true);
-      localStorage.setItem('promptvision_admin_session', 'true');
-      setShowAdminLoginModal(false);
-      setAdminPasswordError(false);
-      setShowAdminPanel(true);
-    } else {
-      setAdminPasswordError(true);
-      setTimeout(() => setAdminPasswordError(false), 2000);
-    }
-  };
-
-  const handleAdminLogout = () => {
-    setIsAdminSession(false);
-    localStorage.removeItem('promptvision_admin_session');
   };
 
   const handleSelectHistoryItem = (itemResult: AnalysisResult, thumb: string) => {
@@ -249,49 +133,6 @@ const App: React.FC = () => {
           </div>
 
           <div className="flex items-center gap-3">
-            {/* Real-time Central AI status indicator */}
-            {globalConfig?.apiKey ? (
-              <div className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-xs text-emerald-400 font-bold">
-                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
-                <span>Central AI Active (সার্ভিস সচল)</span>
-              </div>
-            ) : (
-              <div className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-red-500/10 border border-red-500/20 text-xs text-red-400 font-bold">
-                <span className="w-2 h-2 rounded-full bg-red-400" />
-                <span>No Central API Configured</span>
-              </div>
-            )}
-
-            {/* Admin Panel Button */}
-            {isAdminSession ? (
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => setShowAdminPanel(true)}
-                  className="px-3.5 py-1.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 text-xs font-bold text-rose-400 flex items-center gap-1.5 transition-all"
-                >
-                  <Shield className="w-3.5 h-3.5 text-rose-400" />
-                  <span>🛡️ Admin Panel</span>
-                </button>
-                <button
-                  onClick={handleAdminLogout}
-                  className="px-2.5 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-[10px] text-neutral-400 hover:text-white transition-colors"
-                >
-                  Logout Admin
-                </button>
-              </div>
-            ) : (
-              <button
-                onClick={() => {
-                  setAdminPassword('');
-                  setShowAdminLoginModal(true);
-                }}
-                className="px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-xs text-neutral-400 hover:text-white transition-all flex items-center gap-1.5"
-              >
-                <Lock className="w-3.5 h-3.5 text-neutral-500" />
-                <span>Admin Login</span>
-              </button>
-            )}
-
             <button
               onClick={() => setShowGuide(true)}
               className="px-3.5 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-xs text-neutral-300 hover:text-white transition-all flex items-center gap-1.5"
@@ -307,6 +148,32 @@ const App: React.FC = () => {
               >
                 <Clock className="w-3.5 h-3.5 text-purple-400" />
                 <span>হিস্ট্রি ({history.length})</span>
+              </button>
+            )}
+
+            {user ? (
+              <div className="flex items-center gap-2 pl-2 border-l border-white/10">
+                {user.photoURL && (
+                  <img src={user.photoURL} alt="" className="w-7 h-7 rounded-full border border-white/20" />
+                )}
+                <span className="text-xs text-neutral-300 hidden sm:inline max-w-[100px] truncate">
+                  {user.displayName}
+                </span>
+                <button
+                  onClick={logout}
+                  title="Logout"
+                  className="p-1.5 rounded-lg text-neutral-400 hover:text-red-400 hover:bg-white/5 transition-colors"
+                >
+                  <LogOut className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={signIn}
+                className="px-3.5 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-xs text-white font-medium transition-all flex items-center gap-1.5"
+              >
+                <LogIn className="w-3.5 h-3.5" />
+                <span>Google Sign In</span>
               </button>
             )}
           </div>
@@ -329,16 +196,6 @@ const App: React.FC = () => {
             />
 
             <div className="flex flex-col items-center gap-4 mt-6">
-              {isAdminSession ? (
-                <div className="text-xs text-amber-400 font-bold bg-amber-500/10 border border-amber-500/20 px-4 py-2 rounded-2xl animate-pulse">
-                  🏆 Admin Session (Unlimited Trials Enabled)
-                </div>
-              ) : (
-                <div className="text-xs text-neutral-400 bg-white/5 border border-white/10 px-4 py-2 rounded-2xl">
-                  আজকের অবশিষ্ট ফ্রি ট্রায়াল: <span className="font-bold text-white">{(3 - guestTrials) < 0 ? 0 : (3 - guestTrials)}/3</span>
-                </div>
-              )}
-
               <motion.button
                 whileHover={isReady ? { scale: 1.02 } : {}}
                 whileTap={isReady ? { scale: 0.98 } : {}}
@@ -357,12 +214,12 @@ const App: React.FC = () => {
                       <div className="w-1.5 h-1.5 bg-white rounded-full animate-bounce [animation-delay:-0.15s]" />
                       <div className="w-1.5 h-1.5 bg-white rounded-full animate-bounce" />
                     </div>
-                    <span>বিশ্লেষণ হচ্ছে...</span>
+                    <span>ছবি বিশ্লেষণ হচ্ছে... (Extracting Prompts)</span>
                   </>
                 ) : (
                   <>
                     <Wand2 className="w-4 h-4" />
-                    <span>প্রম্পট তৈরি করুন</span>
+                    <span>প্রম্পট তৈরি করুন (Generate AI Prompt)</span>
                   </>
                 )}
               </motion.button>
@@ -417,7 +274,7 @@ const App: React.FC = () => {
                 </div>
                 <h4 className="text-sm font-bold text-white mb-2">ছবি আপলোড করুন</h4>
                 <p className="text-xs text-neutral-400 leading-relaxed">
-                  আপনার পছন্দের যেকোনো আর্ট, ফটো বা ডিজাইন আপলোড করুন। AI এর ক্যামেরা, লাইٹنگ ও পোজ স্ক্যান করবে।
+                  আপনার পছন্দের যেকোনো আর্ট, ফটো বা ডিজাইন আপলোড করুন। AI এর ক্যামেরা, লাইটিং ও পোজ স্ক্যান করবে।
                 </p>
               </div>
 
@@ -445,118 +302,6 @@ const App: React.FC = () => {
         )}
       </main>
 
-      {/* Admin Panel Modal Overlay */}
-      {showAdminPanel && (
-        <AdminPanel onClose={() => setShowAdminPanel(false)} />
-      )}
-
-      {/* Admin Login Password Modal */}
-      {showAdminLoginModal && (
-        <div className="fixed inset-0 z-50 bg-black/95 backdrop-blur-lg flex items-center justify-center p-4">
-          <div className="bg-neutral-900 border border-white/10 rounded-3xl max-w-sm w-full p-6 text-center shadow-2xl relative overflow-hidden">
-            <div className="absolute top-0 right-0 w-48 h-48 bg-rose-500/5 rounded-full blur-[80px] pointer-events-none" />
-            
-            <div className="w-14 h-14 rounded-2xl bg-rose-500/10 border border-rose-500/20 text-rose-400 flex items-center justify-center mx-auto mb-5 shadow-lg">
-              <Lock className="w-6 h-6 animate-pulse" />
-            </div>
-
-            <h3 className="text-lg font-extrabold text-white tracking-tight">এডমিন পাসওয়ার্ড প্রয়োজন</h3>
-            <p className="text-[11px] text-neutral-400 mt-1">প্যানেলে প্রবেশ করতে এডমিন সিকিউরিটি পিন নম্বর প্রদান করুন।</p>
-
-            <form onSubmit={handleAdminVerify} className="mt-5 space-y-4">
-              <div className="relative">
-                <input
-                  type={showPasswordChar ? "text" : "password"}
-                  placeholder="পিন নম্বর লিখুন..."
-                  value={adminPassword}
-                  onChange={(e) => setAdminPassword(e.target.value)}
-                  maxLength={10}
-                  className="w-full bg-black/50 border border-white/10 rounded-xl py-3 pl-4 pr-11 text-center font-mono text-sm tracking-widest text-white focus:outline-none focus:border-rose-500/50 transition-colors"
-                  autoFocus
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPasswordChar(!showPasswordChar)}
-                  className="absolute top-3.5 right-3.5 text-neutral-500 hover:text-white"
-                >
-                  {showPasswordChar ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                </button>
-              </div>
-
-              {adminPasswordError && (
-                <p className="text-[11px] text-red-400 font-bold flex items-center gap-1 justify-center animate-shake">
-                  <AlertTriangle className="w-3.5 h-3.5" />
-                  <span>ভুল পাসওয়ার্ড! অনুগ্রহ করে আবার চেষ্টা করুন।</span>
-                </p>
-              )}
-
-              <div className="flex gap-2 pt-1">
-                <button
-                  type="button"
-                  onClick={() => setShowAdminLoginModal(false)}
-                  className="flex-1 py-2.5 rounded-xl bg-white/5 border border-white/10 text-neutral-400 hover:text-white text-xs font-semibold transition-colors"
-                >
-                  বাতিল করুন
-                </button>
-                <button
-                  type="submit"
-                  className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-rose-600 to-pink-600 hover:brightness-110 text-white font-bold text-xs transition-all"
-                >
-                  প্রবেশ করুন
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* Premium Upgrade Block Modal Overlay */}
-      {showUpgradeModal && (
-        <div className="fixed inset-0 z-50 bg-black/90 backdrop-blur-md flex items-center justify-center p-4">
-          <motion.div 
-            initial={{ scale: 0.95, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
-            className="bg-neutral-900 border border-amber-500/20 rounded-3xl max-w-md w-full p-6 text-center relative overflow-hidden shadow-2xl"
-          >
-            <div className="absolute -top-10 -left-10 w-40 h-48 bg-amber-500/10 rounded-full blur-[80px] pointer-events-none" />
-            
-            <div className="w-16 h-16 rounded-2xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center mx-auto mb-5 text-amber-400 animate-bounce">
-              <Lock className="w-7 h-7" />
-            </div>
-
-            <h3 className="text-xl font-bold text-white tracking-tight">আপনার ৩টি ফ্রি ট্রায়াল লিমিট শেষ!</h3>
-            <p className="text-xs text-neutral-300 mt-2.5 leading-relaxed">
-              আজকের ফ্রি ছবি বিশ্লেষণের লিমিট শেষ হয়ে গেছে। আনলিমিটেড ব্যবহার এবং হাই-এন্ড প্রম্পট সার্ভিস চালু রাখতে আজই মাত্র **২০ টাকা** দিয়ে প্রিমিয়াম মেম্বারশিপ কিনুন!
-            </p>
-
-            <div className="my-5 p-4 rounded-2xl bg-white/5 border border-white/10 space-y-1.5 text-left">
-              <p className="text-xs font-semibold text-neutral-300">যোগাযোগের নম্বর (WhatsApp):</p>
-              <p className="text-base font-extrabold text-amber-400 tracking-wider">01332756124</p>
-              <p className="text-[10px] text-neutral-500 leading-relaxed">* যোগাযোগ করার পর আপনার ব্রাউজারে আনলিমিটেড সার্ভিস সচল করার গোপন পিন নম্বর প্রদান করা হবে।</p>
-            </div>
-
-            <div className="space-y-3">
-              <a
-                href={`https://wa.me/8801332756124?text=Hi%2C%2520I%2520want%2520to%2520purchase%2520premium%2520subscription%2520for%2520PromptVision%2520AI`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="w-full py-3 rounded-2xl bg-amber-500 hover:bg-amber-400 text-black font-extrabold text-xs uppercase tracking-wider transition-all flex items-center justify-center gap-2 hover:shadow-lg shadow-amber-500/20"
-              >
-                <MessageSquare className="w-4 h-4" />
-                <span>হোয়াটসঅ্যাপে কিনুন (Buy Premium)</span>
-              </a>
-
-              <button
-                onClick={() => setShowUpgradeModal(false)}
-                className="w-full py-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-neutral-400 hover:text-white text-xs font-medium transition-colors"
-              >
-                বন্ধ করুন (Close)
-              </button>
-            </div>
-          </motion.div>
-        </div>
-      )}
-
       {/* History Drawer Modal */}
       {showHistory && (
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
@@ -568,10 +313,7 @@ const App: React.FC = () => {
               </div>
               <div className="flex items-center gap-2">
                 <button
-                  onClick={() => {
-                    setHistory([]);
-                    localStorage.removeItem('promptvision_history_v1');
-                  }}
+                  onClick={clearHistory}
                   className="text-xs text-red-400 hover:text-red-300 font-medium px-2 py-1"
                 >
                   Clear All

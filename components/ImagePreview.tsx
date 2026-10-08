@@ -11,12 +11,6 @@ interface ImagePreviewProps {
 
 const SAMPLE_IMAGES = [
   {
-    title: '3D Graphic Render',
-    titleBn: '🎨 গ্রাফিক ডিজাইন রেন্ডার',
-    url: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=600&auto=format&fit=crop&q=80',
-    mimeType: 'image/jpeg'
-  },
-  {
     title: 'Cyberpunk Neon',
     titleBn: 'সাইবারপাংক নিয়ন',
     url: 'https://images.unsplash.com/photo-1578632767115-351597cf2477?w=600&auto=format&fit=crop&q=80',
@@ -30,7 +24,7 @@ const SAMPLE_IMAGES = [
   },
   {
     title: 'Surreal Fantasy',
-    titleBn: 'ফ্যান্টাসি আর্ট',
+    titleBn: 'ফ্যান্টাসি ল্যান্ডস্কেপ',
     url: 'https://images.unsplash.com/photo-1518709268805-4e9042af9f23?w=600&auto=format&fit=crop&q=80',
     mimeType: 'image/jpeg'
   }

@@ -2,7 +2,7 @@
   "entities": {
     "User": {
       "title": "User",
-      "description": "A user of the application with access permissions and daily trial counters.",
+      "description": "A user of the application.",
       "type": "object",
       "properties": {
         "uid": { "type": "string", "description": "The Firebase Auth UID." },
@@ -17,23 +17,9 @@
             "expiresAt": { "type": "integer", "description": "Timestamp in ms" },
             "token": { "type": "string", "description": "User specific access token" }
           }
-        },
-        "dailyGenerations": { "type": "integer", "description": "Number of trial generations today." },
-        "lastGenerationDate": { "type": "string", "description": "Date of last generation in YYYY-MM-DD format." }
+        }
       },
       "required": ["uid", "email"]
-    },
-    "GlobalConfig": {
-      "title": "GlobalConfig",
-      "description": "Global API key and model specifications configured by the admin.",
-      "type": "object",
-      "properties": {
-        "activeProvider": { "type": "string", "enum": ["gemini", "deepseek"] },
-        "deepseekApiKey": { "type": "string" },
-        "geminiApiKey": { "type": "string" },
-        "customModel": { "type": "string" },
-        "customEndpoint": { "type": "string" }
-      }
     },
     "Analysis": {
       "title": "Analysis",
@@ -60,10 +46,6 @@
     "/admins/{uid}": {
       "schema": { "type": "object", "properties": { "email": { "type": "string" } } },
       "description": "Admin list for role check."
-    },
-    "/config/global": {
-      "schema": { "$ref": "GlobalConfig" },
-      "description": "Global Admin configured API keys and models."
     },
     "/users/{uid}/analyses/{analysisId}": {
       "schema": { "$ref": "Analysis" },

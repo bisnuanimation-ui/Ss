@@ -9,22 +9,14 @@ export interface UserProfile {
     expiresAt: number;
     token: string;
   };
-  dailyGenerations?: number;
-  lastGenerationDate?: string;
 }
 
 export interface AnalysisResult {
-  isGraphicDesign: boolean;
   masterPrompt: string;
-  graphicDesignPrompt: string;
-  graphicDesignDetails: string;
-  identifiedFonts: string;
-  spatialPerspective: string;
   shortPrompt: string;
   midjourneyPrompt: string;
   subjectSwapPrompt: string;
   styleTransferPrompt: string;
-  exactPoseAndStance: string;
   subjectAndAttire: string;
   cameraAndComposition: string;
   lightingAndAtmosphere: string;
