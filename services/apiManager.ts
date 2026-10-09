@@ -6,10 +6,10 @@ const STORAGE_KEY = 'promptvision_api_keys_v2';
 const DEFAULT_KEYS: ApiKeyConfig[] = [
   {
     id: 'key_gemini_primary',
-    name: 'Gemini Primary (ডিফল্ট)',
+    name: 'Gemini 3.8 Flash (সিস্টেম ইঞ্জিন)',
     provider: 'gemini',
-    key: (import.meta as any).env?.VITE_GEMINI_API_KEY || process.env.GEMINI_API_KEY || '',
-    model: 'gemini-3.1-flash-lite',
+    key: 'SYSTEM_DEFAULT',
+    model: 'gemini-3.8-flash',
     status: 'active',
     usageCount: 0,
     isSystem: true,
@@ -64,14 +64,24 @@ class ApiManagerService {
       const stored = localStorage.getItem(STORAGE_KEY);
       if (stored) {
         const parsed = JSON.parse(stored) as ApiKeyConfig[];
-        // Merge with system key if available
-        const sysKey = (import.meta as any).env?.VITE_GEMINI_API_KEY || process.env.GEMINI_API_KEY;
         this.keys = parsed.map(k => {
-          if (k.id === 'key_gemini_primary' && !k.key && sysKey) {
-            return { ...k, key: sysKey };
+          if (k.id === 'key_gemini_primary') {
+            return {
+              ...k,
+              name: 'Gemini 3.8 Flash (সিস্টেম ইঞ্জিন)',
+              key: 'SYSTEM_DEFAULT',
+              model: 'gemini-3.8-flash',
+              isSystem: true,
+              errorMessage: undefined,
+            };
           }
           return k;
         });
+
+        // If key_gemini_primary wasn't in parsed array, add it
+        if (!this.keys.some(k => k.id === 'key_gemini_primary')) {
+          this.keys.unshift(DEFAULT_KEYS[0]);
+        }
       } else {
         this.keys = [...DEFAULT_KEYS];
       }
@@ -258,6 +268,12 @@ class ApiManagerService {
     const start = performance.now();
 
     try {
+      if (target.key === 'SYSTEM_DEFAULT') {
+        const latency = Math.round(performance.now() - start);
+        this.updateKeyStatus(id, target.status === 'active' ? 'active' : 'standby', undefined, latency);
+        return { success: true, latencyMs: latency, message: 'সিস্টেম ইঞ্জিন সক্রিয় (Gemini 3.8 Flash Connected)' };
+      }
+
       if (target.provider === 'gemini') {
         const url = `https://generativelanguage.googleapis.com/v1beta/models?key=${target.key.trim()}`;
         const res = await fetch(url);

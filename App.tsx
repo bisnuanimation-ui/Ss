@@ -4,28 +4,25 @@ import {
   Sparkles, 
   LogIn, 
   LogOut, 
-  History, 
-  Wand2, 
-  HelpCircle, 
+  Key, 
+  Zap, 
+  Crown, 
+  Share2, 
+  RefreshCw, 
+  Clock, 
   AlertCircle,
   X,
-  Clock,
-  ArrowRight,
-  Key,
-  Zap,
-  Share2,
-  RefreshCw,
-  Layers,
-  Palette
+  MessageCircle
 } from 'lucide-react';
 import Header from './components/Header';
 import ImagePreview from './components/ImagePreview';
 import ResultsView from './components/ResultsView';
 import ApiManagerModal from './components/ApiManagerModal';
-import MobileNav from './components/MobileNav';
+import PremiumModal from './components/PremiumModal';
 import { analyzeWithMultiApi } from './services/visionAnalyzer';
 import { apiManager } from './services/apiManager';
 import { loadSharedAnalysis } from './services/shareService';
+import { quotaService, FREE_DAILY_LIMIT, WHATSAPP_NUMBER, WHATSAPP_LINK } from './services/quotaService';
 import { AppState, AnalysisResult, GraphicCustomization } from './types';
 import { useFirebase } from './components/FirebaseProvider';
 
@@ -40,16 +37,15 @@ export const App: React.FC = () => {
     error: null,
   });
 
-  // UI state
-  const [mobileTab, setMobileTab] = useState<'scanner' | 'studio' | 'history'>('scanner');
+  // Modals state
   const [isApiModalOpen, setIsApiModalOpen] = useState(false);
+  const [isPremiumModalOpen, setIsPremiumModalOpen] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
-  const [showGuide, setShowGuide] = useState(false);
-  const [fastMode, setFastMode] = useState(true);
 
-  // Modifiers
-  const [customAttire, setCustomAttire] = useState('');
-  const [customHeadline, setCustomHeadline] = useState('');
+  // Quota & Premium state
+  const [isPremium, setIsPremium] = useState<boolean>(() => quotaService.isPremium());
+  const [remainingUses, setRemainingUses] = useState<number>(() => quotaService.getRemainingFreeUses());
+
   const [statusMessage, setStatusMessage] = useState('');
 
   // Key rotation alert toast
@@ -72,7 +68,7 @@ export const App: React.FC = () => {
 
       setTimeout(() => {
         setRotationToast(null);
-      }, 6000);
+      }, 5000);
     });
 
     return () => unsubscribe();
@@ -146,16 +142,24 @@ export const App: React.FC = () => {
   const handleAnalyze = async () => {
     if (!state.image || !state.imageMimeType) return;
 
+    // 1. Check daily free limit (10 times per day)
+    if (!quotaService.canGenerate()) {
+      setIsPremiumModalOpen(true);
+      return;
+    }
+
     setState(prev => ({ ...prev, isAnalyzing: true, error: null }));
-    setStatusMessage('ছবি বিশ্লেষণ শুরু হচ্ছে...');
+    setStatusMessage('জেমিনি ৩.৮ ফ্ল্যাশ দ্বারা ছবি বিশ্লেষণ চলছে...');
 
     try {
       const result = await analyzeWithMultiApi(state.image, state.imageMimeType, {
-        fastMode,
-        customAttire: customAttire.trim() || undefined,
-        customHeadline: customHeadline.trim() || undefined,
+        fastMode: true,
         onStatusUpdate: (msg) => setStatusMessage(msg),
       });
+
+      // Update quota count
+      quotaService.incrementUsage();
+      setRemainingUses(quotaService.getRemainingFreeUses());
 
       setState(prev => ({ ...prev, result, isAnalyzing: false }));
       setStatusMessage('');
@@ -164,7 +168,7 @@ export const App: React.FC = () => {
       await saveAnalysis(result, state.image);
     } catch (err: any) {
       console.error('Multi-API Analysis execution failed:', err);
-      const errMsg = err?.message || 'ছবি বিশ্লেষণ ব্যর্থ হয়েছে। অনুগ্রহ করে API Key যাচাই করুন।';
+      const errMsg = err?.message || 'ছবি বিশ্লেষণ ব্যর্থ হয়েছে। অনুগ্রহ করে API Key বা নেটওয়ার্ক সংযোগ যাচাই করুন।';
 
       setState(prev => ({
         ...prev,
@@ -173,18 +177,6 @@ export const App: React.FC = () => {
       }));
       setStatusMessage('');
     }
-  };
-
-  const handleSelectHistoryItem = (itemResult: AnalysisResult, thumb: string) => {
-    setState({
-      image: thumb || null,
-      imageMimeType: 'image/jpeg',
-      isAnalyzing: false,
-      result: itemResult,
-      error: null,
-    });
-    setShowHistory(false);
-    setMobileTab('scanner');
   };
 
   const handleApplyCustomization = (customization: GraphicCustomization) => {
@@ -200,90 +192,85 @@ export const App: React.FC = () => {
     }
   };
 
-  const isReady = !!state.image && !state.isAnalyzing;
+  const handlePremiumActivated = () => {
+    setIsPremium(true);
+    setRemainingUses(Infinity);
+  };
 
   return (
-    <div className="min-h-screen bg-[#090712] text-neutral-100 flex flex-col font-sans selection:bg-purple-600/40 pb-16 sm:pb-0">
-      {/* Top Mobile Bar */}
-      <MobileNav
-        activeTab={mobileTab}
-        onTabChange={(tab) => {
-          setMobileTab(tab);
-          if (tab === 'history') setShowHistory(true);
-        }}
-        onOpenApiManager={() => setIsApiModalOpen(true)}
-        hasResult={!!state.result}
-      />
+    <div className="min-h-screen bg-[#070510] text-neutral-100 flex flex-col font-sans selection:bg-cyan-500/30 relative overflow-x-hidden">
+      {/* Background Radial Ambient Lighting (Inspired by Screenshot 1 & 2) */}
+      <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[800px] h-[450px] bg-gradient-to-b from-purple-900/20 via-cyan-900/10 to-transparent blur-[120px] pointer-events-none" />
 
-      {/* Top Desktop Navbar */}
-      <nav className="w-full border-b border-purple-500/15 bg-[#0d0a1a]/80 backdrop-blur-xl px-4 sm:px-6 py-3.5 sticky top-0 z-40">
-        <div className="max-w-6xl mx-auto flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-2xl bg-gradient-to-tr from-purple-600 via-violet-600 to-indigo-500 flex items-center justify-center shadow-lg shadow-purple-600/30">
+      {/* Top Navbar */}
+      <nav className="w-full border-b border-white/[0.08] bg-[#090714]/70 backdrop-blur-xl px-4 sm:px-6 py-3.5 sticky top-0 z-40">
+        <div className="max-w-5xl mx-auto flex items-center justify-between">
+          {/* Logo */}
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-cyan-400 via-indigo-500 to-purple-600 flex items-center justify-center shadow-md shadow-cyan-500/20">
               <Sparkles className="w-4 h-4 text-white" />
             </div>
-            <div>
-              <span className="font-black text-base sm:text-lg tracking-tight text-white flex items-center gap-1.5">
-                PromptVision <span className="text-purple-400">AI</span>
-                <span className="text-[10px] px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-300 font-semibold border border-purple-500/30 hidden sm:inline">
-                  MULTI-API ROTATION
-                </span>
-              </span>
-            </div>
+            <span className="font-black text-base sm:text-lg tracking-tight text-white flex items-center gap-1">
+              PromptVision <span className="text-cyan-400">AI</span>
+            </span>
           </div>
 
+          {/* Right Controls - Clean and Minimal */}
           <div className="flex items-center gap-2 sm:gap-3">
-            {/* API Manager Button */}
+            {/* Daily Usage / VIP Status Badge */}
+            <button
+              onClick={() => setIsPremiumModalOpen(true)}
+              className={`px-3 py-1.5 rounded-full border text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                isPremium
+                  ? 'bg-amber-500/15 border-amber-500/40 text-amber-300 shadow-[0_0_15px_rgba(245,158,11,0.2)]'
+                  : remainingUses > 0
+                  ? 'bg-cyan-950/40 border-cyan-500/30 text-cyan-300 hover:border-cyan-400'
+                  : 'bg-rose-950/40 border-rose-500/40 text-rose-300 animate-pulse'
+              }`}
+            >
+              {isPremium ? (
+                <>
+                  <Crown className="w-3.5 h-3.5 text-amber-400" />
+                  <span>PRO VIP</span>
+                </>
+              ) : (
+                <>
+                  <Zap className="w-3.5 h-3.5 text-cyan-400" />
+                  <span>বাকি: {remainingUses}/১০ বার</span>
+                </>
+              )}
+            </button>
+
+            {/* API Key Modal Button */}
             <button
               onClick={() => setIsApiModalOpen(true)}
-              className="px-3 sm:px-3.5 py-1.5 rounded-xl bg-purple-600/20 hover:bg-purple-600/30 border border-purple-500/30 text-xs text-purple-200 hover:text-white transition-all flex items-center gap-1.5 cursor-pointer shadow-sm"
+              className="px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-xs text-neutral-300 hover:text-white transition-all flex items-center gap-1.5 cursor-pointer"
+              title="API Key সেটিংস"
             >
               <Key className="w-3.5 h-3.5 text-amber-400" />
-              <span className="hidden sm:inline">API রোটেশন কী</span>
-              <span className="sm:hidden">এপিআই</span>
+              <span className="hidden sm:inline">API Key</span>
             </button>
 
-            <button
-              onClick={() => setShowGuide(true)}
-              className="px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-xs text-neutral-300 hover:text-white transition-all hidden sm:flex items-center gap-1.5 cursor-pointer"
-            >
-              <HelpCircle className="w-3.5 h-3.5 text-purple-400" />
-              <span>সহায়িকা</span>
-            </button>
-
-            {history.length > 0 && (
+            {/* Premium Upgrade Button */}
+            {!isPremium && (
               <button
-                onClick={() => setShowHistory(true)}
-                className="px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-xs text-neutral-300 hover:text-white transition-all flex items-center gap-1.5 cursor-pointer"
+                onClick={() => setIsPremiumModalOpen(true)}
+                className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:opacity-90 text-white text-xs font-bold shadow-md shadow-purple-600/30 transition-all flex items-center gap-1.5 cursor-pointer"
               >
-                <Clock className="w-3.5 h-3.5 text-purple-400" />
-                <span>হিস্ট্রি ({history.length})</span>
+                <Crown className="w-3.5 h-3.5 text-amber-300" />
+                <span className="hidden sm:inline">প্রিমিয়াম নিন</span>
+                <span className="sm:hidden">VIP</span>
               </button>
             )}
 
-            {user ? (
-              <div className="flex items-center gap-2 pl-2 border-l border-white/10">
-                {user.photoURL && (
-                  <img src={user.photoURL} alt="" className="w-7 h-7 rounded-full border border-purple-500/30" />
-                )}
-                <span className="text-xs text-neutral-300 hidden md:inline max-w-[90px] truncate">
-                  {user.displayName}
-                </span>
-                <button
-                  onClick={logout}
-                  title="Logout"
-                  className="p-1.5 rounded-lg text-neutral-400 hover:text-rose-400 hover:bg-white/5 transition-colors cursor-pointer"
-                >
-                  <LogOut className="w-3.5 h-3.5" />
-                </button>
-              </div>
-            ) : (
+            {/* History Button if exists */}
+            {history.length > 0 && (
               <button
-                onClick={signIn}
-                className="px-3 py-1.5 rounded-xl bg-purple-600/30 hover:bg-purple-600 text-xs text-purple-200 hover:text-white font-medium border border-purple-500/30 transition-all flex items-center gap-1.5 cursor-pointer"
+                onClick={() => setShowHistory(true)}
+                className="p-2 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-neutral-300 hover:text-white transition-all cursor-pointer"
+                title="হিস্ট্রি দেখুন"
               >
-                <LogIn className="w-3.5 h-3.5" />
-                <span>লগইন</span>
+                <Clock className="w-3.5 h-3.5 text-purple-400" />
               </button>
             )}
           </div>
@@ -297,19 +284,17 @@ export const App: React.FC = () => {
             initial={{ opacity: 0, y: -20, scale: 0.95 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: -20, scale: 0.95 }}
-            className="fixed top-20 left-1/2 -translate-x-1/2 z-50 max-w-md w-[92%] p-3.5 rounded-2xl bg-amber-950/95 border border-amber-500/40 text-amber-200 shadow-[0_10px_35px_rgba(245,158,11,0.25)] backdrop-blur-xl flex items-center justify-between gap-3 text-xs"
+            className="fixed top-16 left-1/2 -translate-x-1/2 z-50 max-w-md w-[92%] p-3.5 rounded-2xl bg-amber-950/95 border border-amber-500/40 text-amber-200 shadow-[0_10px_35px_rgba(245,158,11,0.25)] backdrop-blur-xl flex items-center justify-between gap-3 text-xs"
           >
-            <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center shrink-0">
-                <Zap className="w-4 h-4" />
-              </div>
+            <div className="flex items-center gap-2">
+              <Zap className="w-4 h-4 text-amber-400 shrink-0" />
               <div>
                 <strong className="font-bold text-white block">
-                  অটো-সুইচ সম্পন্ন: {rotationToast.toName}
+                  এপিআই অটো-সুইচ: {rotationToast.toName}
                 </strong>
-                <p className="text-[11px] text-amber-300/80">
-                  {rotationToast.fromName}-এর {rotationToast.reason} হওয়ায় পরবর্তী সক্রিয় কী-তে সুইচ করা হয়েছে।
-                </p>
+                <span className="text-[11px] text-amber-300/80">
+                  {rotationToast.fromName}-এর লিমিট শেষ হওয়ায় পরবর্তী কী-তে সুইচ করা হয়েছে।
+                </span>
               </div>
             </div>
             <button
@@ -322,19 +307,20 @@ export const App: React.FC = () => {
         )}
       </AnimatePresence>
 
-      {/* Main App Container */}
-      <main className="flex-1 max-w-6xl w-full mx-auto px-4 sm:px-6 py-6 sm:py-8">
+      {/* Main Container */}
+      <main className="flex-1 max-w-5xl w-full mx-auto px-4 sm:px-6 py-4 sm:py-6">
         {!state.result && (
           <Header
             onOpenApiManager={() => setIsApiModalOpen(true)}
-            fastMode={fastMode}
-            onToggleFastMode={() => setFastMode(!fastMode)}
+            onOpenPremium={() => setIsPremiumModalOpen(true)}
+            isPremium={isPremium}
+            remainingUses={remainingUses}
           />
         )}
 
-        {/* Upload & Scanner Screen */}
+        {/* Upload Screen */}
         {!state.result && (
-          <section className="mt-4 mb-10">
+          <section className="mt-2 mb-8">
             <ImagePreview
               image={state.image}
               onUpload={handleFileUpload}
@@ -342,17 +328,11 @@ export const App: React.FC = () => {
               onRemove={handleRemove}
               isAnalyzing={state.isAnalyzing}
               onStartAnalyze={handleAnalyze}
-              customAttire={customAttire}
-              setCustomAttire={setCustomAttire}
-              customHeadline={customHeadline}
-              setCustomHeadline={setCustomHeadline}
-              fastMode={fastMode}
-              setFastMode={setFastMode}
             />
 
             {/* In-flight status indicator */}
             {state.isAnalyzing && statusMessage && (
-              <div className="mt-3 text-center text-xs text-purple-300 animate-pulse font-medium">
+              <div className="mt-3 text-center text-xs text-cyan-300 animate-pulse font-medium">
                 {statusMessage}
               </div>
             )}
@@ -363,12 +343,20 @@ export const App: React.FC = () => {
                 <AlertCircle className="w-4 h-4 shrink-0 text-rose-400" />
                 <div className="flex-1">
                   <span className="font-semibold block">{state.error}</span>
-                  <button
-                    onClick={() => setIsApiModalOpen(true)}
-                    className="text-[11px] text-purple-300 underline font-semibold mt-1 block hover:text-white cursor-pointer"
-                  >
-                    API রোটেশন ম্যানেজারে নতুন কী যুক্ত বা পরিবর্তন করুন →
-                  </button>
+                  <div className="flex items-center gap-3 mt-1.5">
+                    <button
+                      onClick={() => setIsApiModalOpen(true)}
+                      className="text-[11px] text-cyan-300 underline font-semibold hover:text-white cursor-pointer"
+                    >
+                      API Key পরিবর্তন করুন →
+                    </button>
+                    <button
+                      onClick={() => setIsPremiumModalOpen(true)}
+                      className="text-[11px] text-amber-300 underline font-semibold hover:text-white cursor-pointer"
+                    >
+                      প্রিমিয়াম টোকেন সক্রিয় করুন →
+                    </button>
+                  </div>
                 </div>
               </div>
             )}
@@ -401,69 +389,30 @@ export const App: React.FC = () => {
             </motion.div>
           )}
         </AnimatePresence>
-
-        {/* Usage Workflow Cards (inspired by NEXORA features) */}
-        {!state.result && (
-          <section className="mt-12 pt-8 border-t border-purple-500/15">
-            <div className="text-center mb-8">
-              <span className="text-[11px] font-bold uppercase tracking-widest text-purple-400 block mb-1">
-                Forensic Workflow
-              </span>
-              <h3 className="text-lg sm:text-xl font-black text-white">
-                গ্রাফিক্স ডি-কনস্ট্রাকশন ও প্রম্পট ইঞ্জিনিয়ারিং কীভাবে কাজ করে
-              </h3>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 sm:gap-6">
-              <div className="bg-[#120f22]/70 border border-purple-500/20 rounded-3xl p-5 sm:p-6 text-center shadow-lg">
-                <div className="w-12 h-12 mx-auto rounded-2xl bg-purple-600/20 text-purple-400 border border-purple-500/30 flex items-center justify-center mb-3 font-bold text-sm shadow-inner">
-                  ১
-                </div>
-                <h4 className="text-sm font-bold text-white mb-1.5">১. লাইটিং ও লাইট পাথ এক্সট্রাকশন</h4>
-                <p className="text-xs text-purple-200/70 leading-relaxed">
-                  আলো কোথা থেকে আসছে (উৎস), কোন কোণে নামছে (ভেক্টর) এবং কোথায় হাইলাইটস বা ছায়া ফেলছে তা নিখুঁতভাবে চিহ্নিত করে।
-                </p>
-              </div>
-
-              <div className="bg-[#120f22]/70 border border-purple-500/20 rounded-3xl p-5 sm:p-6 text-center shadow-lg">
-                <div className="w-12 h-12 mx-auto rounded-2xl bg-pink-600/20 text-pink-400 border border-pink-500/30 flex items-center justify-center mb-3 font-bold text-sm shadow-inner">
-                  ২
-                </div>
-                <h4 className="text-sm font-bold text-white mb-1.5">২. টেক্সচার গ্রাইন্ডিং ও গ্রাফিক্স ম্যাপিং</h4>
-                <p className="text-xs text-purple-200/70 leading-relaxed">
-                  কোথায় বেশি গ্রাইন্ডিং, ফিল্ম গ্রেইন বা গ্রাঞ্জ আছে এবং কোথায় মসৃণ ভেক্টর ক্লিন সারফেস রয়েছে তা ম্যাপ করে হুবহু রেপ্লিকা বানায়।
-                </p>
-              </div>
-
-              <div className="bg-[#120f22]/70 border border-purple-500/20 rounded-3xl p-5 sm:p-6 text-center shadow-lg">
-                <div className="w-12 h-12 mx-auto rounded-2xl bg-indigo-600/20 text-indigo-400 border border-indigo-500/30 flex items-center justify-center mb-3 font-bold text-sm shadow-inner">
-                  ৩
-                </div>
-                <h4 className="text-sm font-bold text-white mb-1.5">৩. অটো-ফেলওভার ও শেয়ার লিঙ্ক</h4>
-                <p className="text-xs text-purple-200/70 leading-relaxed">
-                  একটি এপিআই-এর লিমিট শেষ হলে সাথে সাথে পরবর্তী কী-তে অটোমেটিক সুইচ করে এবং যেকোনো ডিভাইসে দেখার জন্য শেয়ার লিঙ্ক দেয়।
-                </p>
-              </div>
-            </div>
-          </section>
-        )}
       </main>
 
-      {/* API Rotation Manager Modal */}
+      {/* API Key Modal */}
       <ApiManagerModal
         isOpen={isApiModalOpen}
         onClose={() => setIsApiModalOpen(false)}
         onKeysChanged={() => {}}
       />
 
-      {/* History Drawer Modal */}
+      {/* Premium Upgrade Modal (WhatsApp 01332756124 & Token 152643) */}
+      <PremiumModal
+        isOpen={isPremiumModalOpen}
+        onClose={() => setIsPremiumModalOpen(false)}
+        onActivated={handlePremiumActivated}
+      />
+
+      {/* History Modal */}
       {showHistory && (
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-3 sm:p-4">
-          <div className="bg-[#100d1e] border border-purple-500/30 rounded-3xl max-w-xl w-full max-h-[80vh] flex flex-col shadow-2xl overflow-hidden">
-            <div className="p-4 sm:p-5 border-b border-purple-500/20 flex items-center justify-between">
+          <div className="bg-[#0e0c1a] border border-white/10 rounded-3xl max-w-xl w-full max-h-[80vh] flex flex-col shadow-2xl overflow-hidden">
+            <div className="p-4 border-b border-white/10 flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <Clock className="w-4 h-4 text-purple-400" />
-                <h3 className="font-bold text-sm text-white">পূর্বের তৈরি প্রম্পট হিস্ট্রি ({history.length})</h3>
+                <h3 className="font-bold text-sm text-white">পূর্বের প্রম্পট হিস্ট্রি ({history.length})</h3>
               </div>
               <div className="flex items-center gap-2">
                 <button
@@ -474,42 +423,49 @@ export const App: React.FC = () => {
                 </button>
                 <button
                   onClick={() => setShowHistory(false)}
-                  className="p-1 rounded-lg text-neutral-400 hover:text-white"
+                  className="p-1 rounded-lg text-neutral-400 hover:text-white cursor-pointer"
                 >
                   <X className="w-4 h-4" />
                 </button>
               </div>
             </div>
 
-            <div className="flex-1 overflow-y-auto p-4 space-y-3">
+            <div className="flex-1 overflow-y-auto p-4 space-y-2.5">
               {history.map((item) => (
                 <div
                   key={item.id}
-                  onClick={() => handleSelectHistoryItem(item.result, item.imageThumbnail)}
-                  className="p-3.5 rounded-2xl bg-black/40 hover:bg-purple-900/20 border border-purple-500/15 hover:border-purple-500/40 cursor-pointer transition-all flex items-center gap-4 group"
+                  onClick={() => {
+                    setState({
+                      image: item.imageThumbnail || null,
+                      imageMimeType: 'image/jpeg',
+                      isAnalyzing: false,
+                      result: item.result,
+                      error: null,
+                    });
+                    setShowHistory(false);
+                  }}
+                  className="p-3 rounded-2xl bg-white/5 hover:bg-white/10 border border-white/5 cursor-pointer transition-all flex items-center gap-3 group"
                 >
                   {item.imageThumbnail ? (
                     <img
                       src={item.imageThumbnail}
                       alt=""
-                      className="w-14 h-14 rounded-xl object-cover border border-purple-500/20 shrink-0"
+                      className="w-12 h-12 rounded-xl object-cover border border-white/10 shrink-0"
                     />
                   ) : (
-                    <div className="w-14 h-14 rounded-xl bg-purple-950/30 border border-purple-500/20 flex items-center justify-center shrink-0">
-                      <Sparkles className="w-5 h-5 text-purple-400" />
+                    <div className="w-12 h-12 rounded-xl bg-neutral-800 flex items-center justify-center shrink-0">
+                      <Sparkles className="w-4 h-4 text-neutral-500" />
                     </div>
                   )}
 
                   <div className="flex-1 min-w-0">
-                    <p className="text-xs text-purple-100 line-clamp-2 font-mono leading-relaxed">
+                    <p className="text-xs text-neutral-200 line-clamp-2 font-mono leading-relaxed">
                       {item.result.masterPrompt}
                     </p>
-                    <span className="text-[10px] text-purple-300/60 mt-1 block">
-                      {new Date(item.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} • ক্লিক করে ওপেন করুন
+                    <span className="text-[10px] text-neutral-500 mt-1 block">
+                      {new Date(item.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} • ক্লিক করে দেখুন
                     </span>
                   </div>
-
-                  <ArrowRight className="w-4 h-4 text-purple-400 group-hover:text-white transition-colors shrink-0" />
                 </div>
               ))}
             </div>
@@ -517,53 +473,9 @@ export const App: React.FC = () => {
         </div>
       )}
 
-      {/* Guide Modal */}
-      {showGuide && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-3 sm:p-4">
-          <div className="bg-[#100d1e] border border-purple-500/30 rounded-3xl max-w-lg w-full p-5 sm:p-6 shadow-2xl">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="font-bold text-base text-white flex items-center gap-2">
-                <HelpCircle className="w-5 h-5 text-purple-400" />
-                <span>কীভাবে ব্যবহার করবেন? (User Guide)</span>
-              </h3>
-              <button
-                onClick={() => setShowGuide(false)}
-                className="p-1.5 rounded-lg text-neutral-400 hover:text-white cursor-pointer"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            <div className="space-y-3 text-xs text-purple-200/80 leading-relaxed">
-              <div className="p-3 rounded-2xl bg-purple-950/20 border border-purple-500/15">
-                <strong className="text-purple-300 block mb-1">১. মাল্টি-এপিআই অটো-রোটেশন:</strong>
-                একাধিক API Key সেট করে রাখতে পারেন (Gemini, Friendli AI, OpenAI)। একটির রেট লিমিট শেষ হলে অন্যটি নিজে থেকেই কাজ করবে।
-              </div>
-
-              <div className="p-3 rounded-2xl bg-purple-950/20 border border-purple-500/15">
-                <strong className="text-pink-300 block mb-1">২. গ্রাফিক্স ও লাইট ট্র্যাজেক্টরি:</strong>
-                আলো কোথা থেকে আসছে, কোথায় পড়ছে এবং ডিজাইনের কোথায় বেশি গ্রাইন্ডিং/গ্রাঞ্জ আছে তা পুঙ্খানুপুঙ্খভাবে বের করে দেয়।
-              </div>
-
-              <div className="p-3 rounded-2xl bg-purple-950/20 border border-purple-500/15">
-                <strong className="text-emerald-300 block mb-1">৩. শেয়ার লিঙ্ক (Share Link):</strong>
-                যেকোনো প্রম্পটের ওপর "শেয়ার লিঙ্ক" বাটনে ক্লিক করে সরাসরি মোবাইল বা বন্ধুদের শেয়ার করতে পারেন।
-              </div>
-            </div>
-
-            <button
-              onClick={() => setShowGuide(false)}
-              className="w-full mt-5 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs transition-colors cursor-pointer"
-            >
-              বুঝেছি
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Footer */}
-      <footer className="mt-auto py-5 border-t border-purple-500/15 text-center text-[11px] text-purple-300/50">
-        PromptVision AI • Forensic Image & Graphic Prompt Engineering Engine
+      {/* Clean Minimal Footer */}
+      <footer className="mt-auto py-5 border-t border-white/[0.06] text-center text-[11px] text-neutral-500">
+        PromptVision AI • Powered by Gemini 3.8 Flash • WhatsApp: {WHATSAPP_NUMBER}
       </footer>
     </div>
   );

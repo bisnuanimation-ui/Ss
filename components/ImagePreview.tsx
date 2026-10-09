@@ -5,12 +5,8 @@ import {
   Sparkles, 
   X, 
   Wand2, 
-  Zap, 
-  Type, 
-  Scissors, 
-  Layers,
   ArrowRight,
-  ShieldCheck
+  Zap
 } from 'lucide-react';
 
 interface ImagePreviewProps {
@@ -20,30 +16,24 @@ interface ImagePreviewProps {
   onRemove: () => void;
   isAnalyzing: boolean;
   onStartAnalyze: () => void;
-  customAttire: string;
-  setCustomAttire: (val: string) => void;
-  customHeadline: string;
-  setCustomHeadline: (val: string) => void;
-  fastMode: boolean;
-  setFastMode: (val: boolean) => void;
 }
 
 const SAMPLE_IMAGES = [
   {
-    title: 'NEXORA Streetwear',
-    titleBn: 'স্ট্রিটওয়্যার পোস্টার ও অ্যাপারেল',
-    url: 'https://images.unsplash.com/photo-1509631179647-0177331693ae?w=600&auto=format&fit=crop&q=80',
-    mimeType: 'image/jpeg',
-  },
-  {
-    title: 'Cyberpunk Graphic',
+    title: 'Cyberpunk Neon',
     titleBn: 'সাইবারপাংক নিয়ন গ্রাফিক্স',
     url: 'https://images.unsplash.com/photo-1578632767115-351597cf2477?w=600&auto=format&fit=crop&q=80',
     mimeType: 'image/jpeg',
   },
   {
-    title: 'Cinematic Editorial',
-    titleBn: 'সিনেমাটিক হাই-ফ্যাশন পোর্ট্রেট',
+    title: 'Streetwear Graphic',
+    titleBn: 'স্ট্রিটওয়্যার পোস্টার ও আর্ট',
+    url: 'https://images.unsplash.com/photo-1509631179647-0177331693ae?w=600&auto=format&fit=crop&q=80',
+    mimeType: 'image/jpeg',
+  },
+  {
+    title: 'Cinematic Portrait',
+    titleBn: 'সিনেমাটিক পোর্ট্রেট',
     url: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=600&auto=format&fit=crop&q=80',
     mimeType: 'image/jpeg',
   },
@@ -56,17 +46,10 @@ export const ImagePreview: React.FC<ImagePreviewProps> = ({
   onRemove,
   isAnalyzing,
   onStartAnalyze,
-  customAttire,
-  setCustomAttire,
-  customHeadline,
-  setCustomHeadline,
-  fastMode,
-  setFastMode,
 }) => {
   const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Allow pasting an image from clipboard anywhere on page
   useEffect(() => {
     const handlePaste = (e: ClipboardEvent) => {
       if (isAnalyzing) return;
@@ -140,19 +123,19 @@ export const ImagePreview: React.FC<ImagePreviewProps> = ({
   };
 
   return (
-    <div className="w-full max-w-3xl mx-auto mb-8">
-      {/* Dropzone Container */}
+    <div className="w-full max-w-2xl mx-auto mb-6">
+      {/* Dropzone Container - Clean Glassmorphism */}
       <div
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
         onClick={() => !image && !isAnalyzing && fileInputRef.current?.click()}
-        className={`relative rounded-3xl border-2 border-dashed transition-all duration-300 overflow-hidden ${
+        className={`relative rounded-3xl border transition-all duration-300 overflow-hidden ${
           image
-            ? 'border-purple-500/40 bg-[#120f22]/90 shadow-[0_10px_40px_rgba(139,92,246,0.18)] p-4 sm:p-5'
+            ? 'border-cyan-500/30 bg-[#0d0a1b]/90 shadow-[0_10px_40px_rgba(6,182,212,0.12)] p-4 sm:p-5'
             : isDragging
-            ? 'border-purple-400 bg-purple-600/15 scale-[1.01]'
-            : 'border-purple-500/25 bg-[#100d1e]/50 hover:border-purple-400/50 hover:bg-[#151128]/70 cursor-pointer p-6 sm:p-10'
+            ? 'border-cyan-400 bg-cyan-600/10 scale-[1.01]'
+            : 'border-white/10 bg-[#0c0a17]/60 hover:border-cyan-500/30 hover:bg-[#110d22]/80 cursor-pointer p-8 sm:p-12 shadow-2xl backdrop-blur-xl'
         }`}
       >
         <input
@@ -165,9 +148,9 @@ export const ImagePreview: React.FC<ImagePreviewProps> = ({
         />
 
         {image ? (
-          <div className="relative group flex flex-col items-center">
+          <div className="flex flex-col items-center">
             {/* Image Preview Window */}
-            <div className="relative max-h-[380px] w-full rounded-2xl overflow-hidden bg-black/60 flex items-center justify-center border border-purple-500/20">
+            <div className="relative max-h-[380px] w-full rounded-2xl overflow-hidden bg-black/60 flex items-center justify-center border border-white/10">
               <img
                 src={image}
                 alt="Source preview"
@@ -180,7 +163,7 @@ export const ImagePreview: React.FC<ImagePreviewProps> = ({
                     e.stopPropagation();
                     onRemove();
                   }}
-                  className="absolute top-3 right-3 p-2 rounded-xl bg-black/70 hover:bg-rose-600 text-white backdrop-blur-md transition-all shadow-lg border border-white/10 cursor-pointer"
+                  className="absolute top-3 right-3 p-2 rounded-xl bg-black/80 hover:bg-rose-600 text-white backdrop-blur-md transition-all shadow-lg border border-white/10 cursor-pointer"
                   title="ছবি সরান"
                 >
                   <X className="w-4 h-4" />
@@ -191,64 +174,17 @@ export const ImagePreview: React.FC<ImagePreviewProps> = ({
             {/* Change button bar */}
             <div className="flex items-center justify-between w-full mt-3 px-1 text-xs text-purple-300/80">
               <span className="flex items-center gap-1.5 font-medium">
-                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                ছবি লোড সম্পন্ন হয়েছে (Image Ready)
+                <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse" />
+                ছবি লোড সম্পন্ন হয়েছে
               </span>
               {!isAnalyzing && (
                 <button
                   onClick={() => fileInputRef.current?.click()}
-                  className="text-purple-300 hover:text-white underline font-semibold transition-colors cursor-pointer"
+                  className="text-cyan-400 hover:text-cyan-300 underline font-semibold transition-colors cursor-pointer"
                 >
-                  অন্য ছবি বেছে নিন
+                  অন্য ছবি দিন
                 </button>
               )}
-            </div>
-
-            {/* Micro Customization Inputs before Analysis */}
-            <div className="w-full mt-4 p-3.5 rounded-2xl bg-black/40 border border-purple-500/20 space-y-3">
-              <div className="flex items-center justify-between flex-wrap gap-2">
-                <span className="text-xs font-bold text-purple-200 flex items-center gap-1.5">
-                  <Scissors className="w-3.5 h-3.5 text-purple-400" />
-                  ঐচ্ছিক কাস্টম পোশাক ও গ্রাফিক্স টেক্সট (Optional Modifiers):
-                </span>
-                
-                {/* Fast Mode Toggle */}
-                <button
-                  type="button"
-                  onClick={() => setFastMode(!fastMode)}
-                  className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold border transition-all cursor-pointer ${
-                    fastMode
-                      ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-300'
-                      : 'bg-purple-900/30 border-purple-500/30 text-purple-300'
-                  }`}
-                >
-                  <Zap className="w-3 h-3 text-emerald-400" />
-                  <span>{fastMode ? 'সুপারফাস্ট মোড অন' : 'ডিপ স্টুডিও মোড'}</span>
-                </button>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                <div>
-                  <input
-                    type="text"
-                    value={customAttire}
-                    onChange={(e) => setCustomAttire(e.target.value)}
-                    placeholder="পছন্দের পোশাক (যেমন: oversized graphic tee & cargo pants)"
-                    disabled={isAnalyzing}
-                    className="w-full px-3 py-2 rounded-xl bg-purple-950/30 border border-purple-500/20 text-white text-xs focus:outline-none focus:border-purple-400 placeholder:text-neutral-500"
-                  />
-                </div>
-                <div>
-                  <input
-                    type="text"
-                    value={customHeadline}
-                    onChange={(e) => setCustomHeadline(e.target.value)}
-                    placeholder="কাস্টম টেক্সট/ব্র্যান্ড নাম (যেমন: NEXORA Streetwear)"
-                    disabled={isAnalyzing}
-                    className="w-full px-3 py-2 rounded-xl bg-purple-950/30 border border-purple-500/20 text-white text-xs focus:outline-none focus:border-purple-400 placeholder:text-neutral-500"
-                  />
-                </div>
-              </div>
             </div>
 
             {/* Launch Big Analyze Button */}
@@ -257,17 +193,17 @@ export const ImagePreview: React.FC<ImagePreviewProps> = ({
                 type="button"
                 onClick={onStartAnalyze}
                 disabled={isAnalyzing}
-                className="w-full py-3.5 px-6 rounded-2xl bg-gradient-to-r from-purple-600 via-violet-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-black text-sm sm:text-base tracking-wide flex items-center justify-center gap-2 shadow-[0_10px_35px_rgba(139,92,246,0.35)] transition-all cursor-pointer disabled:opacity-50"
+                className="w-full py-4 px-6 rounded-2xl bg-gradient-to-r from-cyan-500 via-indigo-600 to-purple-600 hover:opacity-95 text-white font-black text-sm sm:text-base tracking-wide flex items-center justify-center gap-2.5 shadow-[0_10px_35px_rgba(6,182,212,0.3)] transition-all cursor-pointer disabled:opacity-50"
               >
                 {isAnalyzing ? (
                   <>
                     <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                    <span>AI বিশ্লেষণ চলছে (অটো-ফেলওভার সক্রিয়)...</span>
+                    <span>জেমিনি ৩.৮ ফ্ল্যাশ প্রম্পট তৈরি করছে...</span>
                   </>
                 ) : (
                   <>
-                    <Sparkles className="w-5 h-5 text-purple-200" />
-                    <span>হুবহু গ্রাফিক্স ও প্রম্পট তৈরি করুন (Generate Master Prompt)</span>
+                    <Sparkles className="w-5 h-5 text-cyan-200" />
+                    <span>প্রম্পট তৈরি করুন (Generate AI Prompt)</span>
                     <ArrowRight className="w-4 h-4 ml-1" />
                   </>
                 )}
@@ -276,23 +212,19 @@ export const ImagePreview: React.FC<ImagePreviewProps> = ({
           </div>
         ) : (
           <div className="flex flex-col items-center justify-center text-center">
-            <div className="w-16 h-16 rounded-2xl bg-purple-600/15 border border-purple-500/30 text-purple-400 flex items-center justify-center mb-4 shadow-[0_0_20px_rgba(139,92,246,0.2)]">
+            <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-cyan-500/20 to-purple-600/20 border border-cyan-500/30 text-cyan-300 flex items-center justify-center mb-4 shadow-[0_0_25px_rgba(6,182,212,0.2)]">
               <Upload className="w-7 h-7" />
             </div>
 
             <h3 className="text-lg sm:text-xl font-black text-white mb-2">
-              ছবি বা গ্রাফিক ডিজাইন আপলোড করুন (Upload Image)
+              ছবি আপলোড করুন (Upload Image)
             </h3>
-            <p className="text-xs sm:text-sm text-purple-200/70 max-w-md leading-relaxed mb-4">
-              যেকোনো গ্রাফিক্স বা ছবি এখানে ড্র্যাগ করুন অথবা ক্লিক করে নির্বাচন করুন। পেস্ট (Ctrl+V) করতে পারেন।
-              <br />
-              <span className="text-purple-300/50 text-[11px] block mt-1">
-                AI আলোর পথ, টেক্সচার গ্রাইন্ডিং ও ক্যামেরা কোণ বিশ্লেষণ করে হুবহু মাস্টার প্রম্পট তৈরি করবে।
-              </span>
+            <p className="text-xs sm:text-sm text-neutral-400 max-w-sm leading-relaxed mb-4">
+              যেকোনো ছবি এখানে ড্র্যাগ করে ছাড়ুন অথবা ক্লিক করে বেছে নিন (Ctrl+V দিয়ে পেস্ট করতে পারেন)।
             </p>
 
-            <div className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-purple-950/40 border border-purple-500/20 text-xs text-purple-200">
-              <ImageIcon className="w-4 h-4 text-purple-400" />
+            <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-white/5 border border-white/10 text-xs text-neutral-300">
+              <ImageIcon className="w-3.5 h-3.5 text-cyan-400" />
               <span>JPG, PNG, WebP সমর্থিত</span>
             </div>
           </div>
@@ -301,16 +233,16 @@ export const ImagePreview: React.FC<ImagePreviewProps> = ({
 
       {/* Preset Demo Samples */}
       {!image && (
-        <div className="mt-4 pt-2 flex flex-wrap items-center justify-center gap-2 sm:gap-3">
-          <span className="text-xs text-purple-300/60 flex items-center gap-1">
-            <Wand2 className="w-3.5 h-3.5 text-purple-400" /> স্যাম্পল ট্রাই করুন:
+        <div className="mt-3 flex flex-wrap items-center justify-center gap-2">
+          <span className="text-xs text-neutral-500 flex items-center gap-1">
+            <Wand2 className="w-3.5 h-3.5 text-neutral-400" /> স্যাম্পল ট্রাই করুন:
           </span>
           {SAMPLE_IMAGES.map((sample, i) => (
             <button
               key={i}
               type="button"
               onClick={() => handleSampleClick(sample.url, sample.mimeType)}
-              className="px-3 py-1.5 rounded-xl text-xs bg-purple-950/30 hover:bg-purple-900/40 border border-purple-500/20 text-purple-200 hover:text-white transition-all flex items-center gap-2 cursor-pointer shadow-sm"
+              className="px-3 py-1.5 rounded-xl text-xs bg-white/5 hover:bg-white/10 border border-white/10 text-neutral-300 hover:text-white transition-all flex items-center gap-2 cursor-pointer shadow-sm"
             >
               <img src={sample.url} alt="" className="w-4 h-4 rounded-md object-cover" />
               <span>{sample.titleBn}</span>

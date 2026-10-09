@@ -1,5 +1,4 @@
-import { GoogleGenAI } from '@google/genai';
-import { AnalysisResult, GraphicCustomization } from '../types';
+import { AnalysisResult } from '../types';
 import { apiManager } from './apiManager';
 
 interface AnalyzeOptions {
@@ -12,38 +11,26 @@ interface AnalyzeOptions {
 }
 
 const buildSystemPrompt = (options: AnalyzeOptions) => `
-You are an Elite Director of Photography, Senior Graphic Designer, and Master AI Image Prompt Reverse-Engineer.
+You are an Elite Director of Photography, Senior Graphic Designer, and Master AI Image Prompt Reverse-Engineer specializing in Midjourney v6.1, FLUX.1, and DALL-E 3.
 
-YOUR MISSION:
-Perform a microscopic, forensic deconstruction of the uploaded image to generate:
-1. An EXACT 100% Master Replica Prompt ("হুবুহু একটা জেনারেট করে দেবে") for Midjourney v6.1, FLUX.1, and DALL-E 3.
-2. A complete Forensic Process Blueprint ("পুরা প্রসেস কোথা থেকে আসছে, কোথা থেকে বলছে"):
-   - PRECISE LIGHT ORIGIN & TRAJECTORY (আলো কোথা থেকে আসছে এবং কোথায় যাচ্ছে - Light Path & Vector):
-     * Exactly WHERE each light source originates (e.g. overhead festoon lights, rear softbox rim, golden 45° sun).
-     * Which directional vector and trajectory it travels (downward diagonal, bounce off marble/floor, lens rim).
-     * EXACT impact zones (where highlights, specular reflections hit, and where elongated shadows are cast).
-   - GRAPHICS & TEXTURE GRINDING BREAKDOWN (কোথায় কোথায় বেশি গ্রাইন্ডিং, গ্রাঞ্জ বা নয়েজ করা হয়েছে):
-     * Detailed map of where heavy texture grinding (গ্রাইন্ডিং), film grain, halftone dots, or distressed print textures are applied vs clean smooth zones.
-     * Graphic element origin: vector frames, floating chips, typography badges, logo placement (like streetwear "NEXORA" style).
-   - CAMERA ANGLE, ELEVATION & 3x3 KEYPAD GRID:
-     * Camera height/elevation (knee-height low angle, eye level, waist level).
-     * Optics: DSLR sensor character, prime lens focal length (e.g. 85mm f/1.4, 35mm f/1.8), creamy circular bokeh.
-     * 3x3 Keypad Dial grid placement (Top-Left [1] to Bottom-Right [9]) of all subjects and graphic anchors.
-   - REALISTIC ENVIRONMENT & NO CGI SLOP:
-     * Describe real physical materials (authentic architecture, stone/wood/fabric textures).
-     * STRICTLY ZERO plastic CGI skin, ZERO artificial fake rendering.
-     * STRICTLY NO mention of head hair, and NO specific individual facial identities.
-${options.customAttire ? `   - USER CUSTOM ATTIRE: The user commanded: "${options.customAttire}". Meticulously integrate this clothing.\n` : ''}
-${options.customHeadline ? `   - CUSTOM GRAPHIC TEXT: The user wants to adapt the design headline to: "${options.customHeadline}".\n` : ''}
-${options.customPalette ? `   - CUSTOM PALETTE: The user requested the color theme: "${options.customPalette}".\n` : ''}
+TASK:
+Perform a microscopic deconstruction of the uploaded image to generate:
+1. An EXACT 100% Master Replica Prompt ("হুবুহু একটা জেনারেট করে দেবে").
+2. A complete Forensic Process Blueprint:
+   - PRECISE LIGHT ORIGIN & TRAJECTORY (Where light originates, which directional vector it travels, and where highlights & shadows land).
+   - GRAPHICS & TEXTURE GRINDING BREAKDOWN (Where heavy texture grinding/noise/grunge/halftone dots are applied vs smooth surfaces).
+   - CAMERA ANGLE, ELEVATION & 3x3 KEYPAD GRID (Knee level, eye level, focal length, aperture f-stop, 3x3 dial composition).
+   - REALISTIC ENVIRONMENT & NO CGI SLOP (Physical real-world textures, strictly zero plastic CGI skin, zero mention of head hair).
+${options.customAttire ? `   - USER CUSTOM ATTIRE: "${options.customAttire}".\n` : ''}
+${options.customHeadline ? `   - CUSTOM GRAPHIC HEADLINE: "${options.customHeadline}".\n` : ''}
 
-You MUST return ONLY a valid, parseable JSON object matching this exact schema:
+You MUST return ONLY valid JSON matching this schema:
 {
-  "masterPrompt": "string (150-250 words master prompt replicating the complete visual DNA, camera, light trajectory, attire, and real-world backdrop)",
-  "shortPrompt": "string (50-70 words fast direct prompt)",
+  "masterPrompt": "string (150-250 words master prompt replicating the visual DNA, camera, light trajectory, attire, and real-world backdrop)",
+  "shortPrompt": "string (45-65 words punchy direct prompt)",
   "midjourneyPrompt": "string (Master prompt with --ar 16:9 --v 6.1 --style raw --stylize 180)",
-  "subjectSwapPrompt": "string (Template with [Insert Subject Here])",
-  "styleTransferPrompt": "string (Style & optics only without specific characters)",
+  "subjectSwapPrompt": "string (Template with [Insert Subject / Character Here])",
+  "styleTransferPrompt": "string (Style, lighting, and optics without specific character)",
   "subjectAndAttire": "string (Detailed character interaction, stance, gestures, clothing fabric and folds)",
   "cameraAndComposition": "string (Exact camera elevation, lens focal length, aperture f-stop, 3x3 grid)",
   "lightingAndAtmosphere": "string (Atmosphere, ambient tones, Kelvin color temperature)",
@@ -53,7 +40,7 @@ You MUST return ONLY a valid, parseable JSON object matching this exact schema:
   "negativePrompt": "string (anti-cgi, plastic skin, 3d render, watermark, deformed, blurry)",
   "suggestedTags": ["tag1", "tag2", "tag3", "tag4", "tag5", "tag6"],
   "lightTrajectory": {
-    "origin": "string (Exact origin points of all light sources, e.g. overhead festoon lights, rear rim)",
+    "origin": "string (Origin points of all light sources, e.g. overhead festoon lights, rear rim)",
     "path": "string (Directional vector, angles, bounces)",
     "impact": "string (Impact zones on subject/environment, specular catchlights, cast shadows)"
   },
@@ -67,13 +54,6 @@ You MUST return ONLY a valid, parseable JSON object matching this exact schema:
     },
     "typographyStyle": "string (Font style, tracking, bold condensed gothic/serif, badge text)",
     "gridPlacement": "string (3x3 Keypad coordinates for subjects and graphics)"
-  },
-  "customization": {
-    "customHeadline": "${options.customHeadline || ''}",
-    "customPalette": "${options.customPalette || ''}",
-    "customAttire": "${options.customAttire || ''}",
-    "customGrinding": "${options.customGrinding || 'subtle'}",
-    "modifiedMasterPrompt": "string (Re-engineered prompt incorporating user customizations while preserving camera, pose, and light trajectory)"
   }
 }
 `;
@@ -87,57 +67,95 @@ export const analyzeWithMultiApi = async (
   const imageMime = mimeType || 'image/jpeg';
   const dataUrl = `data:${imageMime};base64,${cleanBase64}`;
 
-  const maxAttempts = Math.max(apiManager.getKeys().length, 3);
+  const startTime = performance.now();
   let attempt = 0;
   let lastError: any = null;
 
-  const startTime = performance.now();
+  // 1. PRIMARY ROUTE: Server-side Gemini 3.8 Flash proxy (bypasses browser CORS & 403 PERMISSION_DENIED)
+  try {
+    options.onStatusUpdate?.('জেমিনি ৩.৮ ফ্ল্যাশ সার্ভার প্রসেসিং শুরু হচ্ছে...');
+
+    const serverRes = await fetch('/api/analyze', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        base64Image: cleanBase64,
+        mimeType: imageMime,
+        fastMode: options.fastMode,
+        customAttire: options.customAttire,
+        customHeadline: options.customHeadline,
+      }),
+    });
+
+    if (serverRes.ok) {
+      const data = await serverRes.json();
+      data.usedProvider = data.usedProvider || 'Gemini 3.8 Flash (Server)';
+      data.generationDurationMs = Math.round(performance.now() - startTime);
+
+      // Track usage in apiManager if active key exists
+      const activeKey = apiManager.getActiveKey();
+      if (activeKey) {
+        apiManager.incrementUsage(activeKey.id);
+        apiManager.updateKeyStatus(activeKey.id, 'active', undefined, data.generationDurationMs);
+      }
+
+      return data as AnalysisResult;
+    } else {
+      const errBody = await serverRes.json().catch(() => ({}));
+      console.warn('Server-side Gemini returned non-OK status:', serverRes.status, errBody);
+      lastError = new Error(errBody?.error || `Server HTTP ${serverRes.status}`);
+    }
+  } catch (err: any) {
+    console.warn('Direct server /api/analyze call error, falling back to multi-key rotation:', err);
+    lastError = err;
+  }
+
+  // 2. MULTI-KEY FAILOVER: If server-side key had an issue or user has custom keys (Friendli / OpenAI / Custom Gemini)
+  const maxAttempts = Math.max(apiManager.getKeys().length, 3);
 
   while (attempt < maxAttempts) {
     attempt++;
     const currentKey = apiManager.getActiveKey();
 
     if (!currentKey || !currentKey.key || currentKey.key.trim().length < 5) {
-      throw new Error(
-        'কোনো সক্রিয় API Key পাওয়া যায়নি (No active API Key configured). অনুগ্রহ করে উপরে "API রোটেশন ম্যানেজার" থেকে একটি Gemini, Friendli AI, অথবা OpenAI কী যুক্ত করুন।'
-      );
+      break;
     }
 
     options.onStatusUpdate?.(
-      `বিশ্লেষণ চলছে: ${currentKey.name} (${currentKey.provider.toUpperCase()}) দিয়ে প্রসেস করা হচ্ছে...`
+      `বিকল্প এপিআই দিয়ে চেষ্টা করা হচ্ছে: ${currentKey.name} (${currentKey.provider.toUpperCase()})...`
     );
 
     try {
       let resultText = '';
 
       if (currentKey.provider === 'gemini') {
-        const ai = new GoogleGenAI({
-          apiKey: currentKey.key.trim(),
-          httpOptions: {
-            headers: {
-              'User-Agent': 'aistudio-build',
-            },
-          },
+        // Try server endpoint with customKey parameter
+        const res = await fetch('/api/analyze', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            base64Image: cleanBase64,
+            mimeType: imageMime,
+            customKey: currentKey.key.trim(),
+            fastMode: options.fastMode,
+            customAttire: options.customAttire,
+            customHeadline: options.customHeadline,
+          }),
         });
 
-        const modelToUse = options.fastMode
-          ? 'gemini-3.1-flash-lite'
-          : currentKey.model || 'gemini-3.8-flash';
+        if (!res.ok) {
+          const errBody = await res.json().catch(() => ({}));
+          throw new Error(errBody?.error || `Gemini API HTTP ${res.status}`);
+        }
 
-        const response = await ai.models.generateContent({
-          model: modelToUse,
-          contents: [
-            { text: buildSystemPrompt(options) },
-            {
-              inlineData: {
-                mimeType: imageMime,
-                data: cleanBase64,
-              },
-            },
-          ],
-        });
-
-        resultText = response.text || '';
+        const data = await res.json();
+        data.usedProvider = `${currentKey.name} (Gemini 3.8 Flash)`;
+        data.generationDurationMs = Math.round(performance.now() - startTime);
+        apiManager.incrementUsage(currentKey.id);
+        apiManager.updateKeyStatus(currentKey.id, 'active', undefined, data.generationDurationMs);
+        return data as AnalysisResult;
       } else if (currentKey.provider === 'friendli') {
         // Friendli AI OpenAI-compatible endpoint
         const endpoint = (currentKey.endpoint || 'https://api.friendli.ai/serverless/v1').replace(/\/+$/, '');
@@ -172,7 +190,6 @@ export const analyzeWithMultiApi = async (
         const data = await res.json();
         resultText = data?.choices?.[0]?.message?.content || '';
       } else if (currentKey.provider === 'openai') {
-        // OpenAI standard Vision endpoint
         const endpoint = (currentKey.endpoint || 'https://api.openai.com/v1').replace(/\/+$/, '');
         const modelToUse = currentKey.model || 'gpt-4o-mini';
 
@@ -207,7 +224,6 @@ export const analyzeWithMultiApi = async (
         resultText = data?.choices?.[0]?.message?.content || '';
       }
 
-      // Parse JSON from output
       let cleaned = resultText.trim();
       if (cleaned.startsWith('```json')) {
         cleaned = cleaned.replace(/^```json\s*/, '').replace(/```\s*$/, '');
@@ -216,7 +232,6 @@ export const analyzeWithMultiApi = async (
       }
 
       const parsed: AnalysisResult = JSON.parse(cleaned);
-
       apiManager.incrementUsage(currentKey.id);
       apiManager.updateKeyStatus(currentKey.id, 'active', undefined, Math.round(performance.now() - startTime));
 
@@ -227,43 +242,27 @@ export const analyzeWithMultiApi = async (
     } catch (err: any) {
       lastError = err;
       const errStr = String(err?.message || err);
-      console.warn(`API call failed for [${currentKey.name}]:`, errStr);
+      console.warn(`Key ${currentKey.name} failed:`, errStr);
 
-      const isQuotaOrRateLimit =
+      const isQuota =
         errStr.includes('429') ||
         errStr.includes('RESOURCE_EXHAUSTED') ||
-        errStr.includes('Quota') ||
-        errStr.includes('limit') ||
-        errStr.includes('rate_limit');
+        errStr.includes('quota') ||
+        errStr.includes('limit');
 
-      const isKeyInvalid =
-        errStr.includes('API key') ||
-        errStr.includes('401') ||
-        errStr.includes('Unauthorized') ||
-        errStr.includes('invalid_api_key');
-
-      const reason = isQuotaOrRateLimit
-        ? 'কোটা / রেট লিমিট শেষ (Quota Exhausted)'
-        : isKeyInvalid
-        ? 'ভুল বা মেয়াদোত্তীর্ণ কী (Invalid API Key)'
+      const reason = isQuota
+        ? 'কোটা / লিমিট শেষ (Quota Exhausted)'
         : errStr.slice(0, 80);
 
-      // Trigger automatic failover / rotation to next available key!
       options.onStatusUpdate?.(
-        `⚠️ ${currentKey.name} লিমিট শেষ (${reason})! পরবর্তী এপিআই-তে অটোমেটিক সুইচ করা হচ্ছে...`
+        `⚠️ ${currentKey.name} লিমিট শেষ (${reason})! পরবর্তী কী-তে অটোমেটিক সুইচ করা হচ্ছে...`
       );
 
       const nextKey = apiManager.rotateToNextKey(currentKey.id, reason);
-
-      if (!nextKey) {
-        // No more keys in pool
-        break;
-      }
-
-      // Small pause before retrying with next key
+      if (!nextKey) break;
       await new Promise(r => setTimeout(r, 600));
     }
   }
 
-  throw lastError || new Error('সবগুলো API Key এর কোটা শেষ বা ব্যর্থ হয়েছে। অনুগ্রহ করে নতুন API Key যুক্ত করুন।');
+  throw lastError || new Error('ছবি বিশ্লেষণ ব্যর্থ হয়েছে। অনুগ্রহ করে API Key কনফিগারেশন চেক করুন।');
 };

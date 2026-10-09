@@ -4,6 +4,8 @@ export interface UserProfile {
   displayName: string | null;
   photoURL: string | null;
   role?: 'user' | 'admin';
+  dailyGenerations?: number;
+  lastGenerationDate?: string;
   subscription?: {
     status: 'free' | 'premium';
     expiresAt: number;
