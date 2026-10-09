@@ -1,5 +1,6 @@
 import { AnalysisResult } from '../types';
 import { apiManager } from './apiManager';
+import { optimizeImageForFastAnalysis } from './imageOptimizer';
 
 interface AnalyzeOptions {
   fastMode?: boolean;
@@ -63,13 +64,16 @@ export const analyzeWithMultiApi = async (
   mimeType: string,
   options: AnalyzeOptions = {}
 ): Promise<AnalysisResult> => {
-  const cleanBase64 = base64Image.includes(',') ? base64Image.split(',')[1] : base64Image;
-  const imageMime = mimeType || 'image/jpeg';
-  const dataUrl = `data:${imageMime};base64,${cleanBase64}`;
-
   const startTime = performance.now();
   let attempt = 0;
   let lastError: any = null;
+
+  options.onStatusUpdate?.('ছবি অপ্টিমাইজ ও লাইটওয়েট প্রসেস করা হচ্ছে...');
+  const { optimizedBase64, mimeType: optMime } = await optimizeImageForFastAnalysis(base64Image, 1024, 0.85);
+
+  const cleanBase64 = optimizedBase64.includes(',') ? optimizedBase64.split(',')[1] : optimizedBase64;
+  const imageMime = optMime || mimeType || 'image/jpeg';
+  const dataUrl = `data:${imageMime};base64,${cleanBase64}`;
 
   // 1. PRIMARY ROUTE: Server-side Gemini 3.8 Flash proxy (bypasses browser CORS & 403 PERMISSION_DENIED)
   try {

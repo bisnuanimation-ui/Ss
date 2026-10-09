@@ -49,7 +49,7 @@ export const Header: React.FC<HeaderProps> = ({
             {isPremium ? (
               <>
                 <Crown className="w-3.5 h-3.5 text-amber-400" />
-                <span>PRO VIP (আনলিমিটেড)</span>
+                <span>PRO VIP (আনলিমিটেড • অ্যাড-মুক্ত)</span>
               </>
             ) : (
               <>

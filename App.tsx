@@ -19,6 +19,7 @@ import ImagePreview from './components/ImagePreview';
 import ResultsView from './components/ResultsView';
 import ApiManagerModal from './components/ApiManagerModal';
 import PremiumModal from './components/PremiumModal';
+import AdBanner from './components/AdBanner';
 import { analyzeWithMultiApi } from './services/visionAnalyzer';
 import { apiManager } from './services/apiManager';
 import { loadSharedAnalysis } from './services/shareService';
@@ -307,6 +308,13 @@ export const App: React.FC = () => {
         )}
       </AnimatePresence>
 
+      {/* Top Sponsored Ad Banner (Only for free users, 100% blocked for Premium) */}
+      <AdBanner
+        isPremium={isPremium}
+        onUpgradeClick={() => setIsPremiumModalOpen(true)}
+        placement="top"
+      />
+
       {/* Main Container */}
       <main className="flex-1 max-w-5xl w-full mx-auto px-4 sm:px-6 py-4 sm:py-6">
         {!state.result && (
@@ -360,6 +368,13 @@ export const App: React.FC = () => {
                 </div>
               </div>
             )}
+
+            {/* Inline Sponsor Ad for Free Users (100% blocked for Premium) */}
+            <AdBanner
+              isPremium={isPremium}
+              onUpgradeClick={() => setIsPremiumModalOpen(true)}
+              placement="inline"
+            />
           </section>
         )}
 
@@ -385,6 +400,13 @@ export const App: React.FC = () => {
                   })
                 }
                 onApplyCustomization={handleApplyCustomization}
+              />
+
+              {/* Bottom Ad for free users */}
+              <AdBanner
+                isPremium={isPremium}
+                onUpgradeClick={() => setIsPremiumModalOpen(true)}
+                placement="inline"
               />
             </motion.div>
           )}
