@@ -94,11 +94,11 @@ You MUST return ONLY a valid, parseable JSON object matching this schema:
         },
       };
 
-      // Models priority list: Gemini 3.8 Flash as primary with resilient fallbacks
+      // Resilient models list: prioritize gemini-3.7-flash & gemini-3.1-flash-lite for instant response, with gemini-3.8-flash & gemini-flash-latest
       const modelsToTry = [
-        'gemini-3.8-flash',
         'gemini-3.7-flash',
-        'gemini-2.5-flash',
+        'gemini-3.1-flash-lite',
+        'gemini-3.8-flash',
         'gemini-flash-latest'
       ];
       let lastErr: any = null;

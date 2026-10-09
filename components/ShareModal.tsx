@@ -9,10 +9,13 @@ import {
   Globe, 
   Smartphone,
   QrCode,
-  Send
+  Send,
+  FileDown,
+  Loader2
 } from 'lucide-react';
 import { AnalysisResult } from '../types';
 import { generateShareLink } from '../services/shareService';
+import { exportAnalysisToPdf } from '../services/pdfExportService';
 
 interface ShareModalProps {
   isOpen: boolean;
@@ -31,6 +34,8 @@ export const ShareModal: React.FC<ShareModalProps> = ({
   const [isGenerating, setIsGenerating] = useState(true);
   const [copied, setCopied] = useState(false);
   const [shareSuccess, setShareSuccess] = useState(false);
+  const [isExportingPdf, setIsExportingPdf] = useState(false);
+  const [pdfSuccess, setPdfSuccess] = useState(false);
 
   useEffect(() => {
     if (isOpen) {
@@ -70,6 +75,24 @@ export const ShareModal: React.FC<ShareModalProps> = ({
       }
     } else {
       handleCopy();
+    }
+  };
+
+  const handleDownloadPdf = async () => {
+    if (isExportingPdf) return;
+    try {
+      setIsExportingPdf(true);
+      await exportAnalysisToPdf({
+        result,
+        imageUrl,
+        activePrompt: result.masterPrompt,
+      });
+      setPdfSuccess(true);
+      setTimeout(() => setPdfSuccess(false), 3000);
+    } catch (err) {
+      console.error('Failed to export PDF from modal:', err);
+    } finally {
+      setIsExportingPdf(false);
     }
   };
 
@@ -127,8 +150,8 @@ export const ShareModal: React.FC<ShareModalProps> = ({
             </div>
           </div>
 
-          {/* Mobile Native Share Button */}
-          <div className="pt-2">
+          {/* Action Buttons: Native Share + PDF Download */}
+          <div className="pt-2 space-y-2">
             <button
               onClick={handleNativeShare}
               disabled={isGenerating}
@@ -137,6 +160,30 @@ export const ShareModal: React.FC<ShareModalProps> = ({
               <Smartphone className="w-4 h-4" />
               <span>মোবাইলে শেয়ার করুন (WhatsApp / Telegram / Messenger)</span>
             </button>
+
+            <button
+              onClick={handleDownloadPdf}
+              disabled={isExportingPdf}
+              className="w-full py-2.5 px-4 rounded-2xl bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/30 text-emerald-300 hover:text-emerald-200 font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer disabled:opacity-50"
+            >
+              {isExportingPdf ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span>পিডিএফ তৈরি হচ্ছে...</span>
+                </>
+              ) : pdfSuccess ? (
+                <>
+                  <Check className="w-4 h-4 text-emerald-300" />
+                  <span>পিডিএফ ডাউনলোড সম্পন্ন!</span>
+                </>
+              ) : (
+                <>
+                  <FileDown className="w-4 h-4 text-emerald-400" />
+                  <span>ক্লিন PDF ডকুমেন্ট ডাউনলোড করুন (.pdf)</span>
+                </>
+              )}
+            </button>
+
             {shareSuccess && (
               <p className="text-center text-xs text-emerald-400 mt-1.5">
                 সফলভাবে শেয়ার করা হয়েছে!

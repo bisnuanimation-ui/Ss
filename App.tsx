@@ -345,25 +345,40 @@ export const App: React.FC = () => {
               </div>
             )}
 
-            {/* Error Message */}
+            {/* Error Message with direct Retry & Solutions */}
             {state.error && (
-              <div className="mt-4 flex items-center gap-2.5 p-4 rounded-2xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs max-w-lg mx-auto text-left shadow-lg">
-                <AlertCircle className="w-4 h-4 shrink-0 text-rose-400" />
-                <div className="flex-1">
-                  <span className="font-semibold block">{state.error}</span>
-                  <div className="flex items-center gap-3 mt-1.5">
-                    <button
-                      onClick={() => setIsApiModalOpen(true)}
-                      className="text-[11px] text-cyan-300 underline font-semibold hover:text-white cursor-pointer"
-                    >
-                      API Key পরিবর্তন করুন →
-                    </button>
-                    <button
-                      onClick={() => setIsPremiumModalOpen(true)}
-                      className="text-[11px] text-amber-300 underline font-semibold hover:text-white cursor-pointer"
-                    >
-                      প্রিমিয়াম টোকেন সক্রিয় করুন →
-                    </button>
+              <div className="mt-4 p-4.5 rounded-2xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs max-w-lg mx-auto text-left shadow-lg">
+                <div className="flex items-start gap-3">
+                  <AlertCircle className="w-5 h-5 shrink-0 text-rose-400 mt-0.5" />
+                  <div className="flex-1 space-y-2">
+                    <span className="font-bold text-white text-sm block">
+                      প্রসেসিং নোটিফিকেশন (System Notice)
+                    </span>
+                    <p className="text-neutral-300 text-xs leading-relaxed">
+                      {state.error}
+                    </p>
+                    <div className="flex items-center gap-2 flex-wrap pt-1.5">
+                      <button
+                        onClick={handleAnalyze}
+                        disabled={state.isAnalyzing}
+                        className="px-3.5 py-1.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs flex items-center gap-1.5 cursor-pointer transition-all shadow-md shadow-purple-600/30"
+                      >
+                        <RefreshCw className="w-3.5 h-3.5" />
+                        <span>পুনরায় চেষ্টা করুন (Retry)</span>
+                      </button>
+                      <button
+                        onClick={() => setIsApiModalOpen(true)}
+                        className="px-3 py-1.5 rounded-xl bg-cyan-950/40 hover:bg-cyan-900/40 border border-cyan-500/30 text-cyan-300 hover:text-white text-xs font-semibold cursor-pointer transition-all"
+                      >
+                        ফ্রি API Key সেট করুন →
+                      </button>
+                      <button
+                        onClick={() => setIsPremiumModalOpen(true)}
+                        className="px-3 py-1.5 rounded-xl bg-amber-950/40 hover:bg-amber-900/40 border border-amber-500/30 text-amber-300 hover:text-white text-xs font-semibold cursor-pointer transition-all"
+                      >
+                        প্রিমিয়াম টোকেন (152643) →
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>

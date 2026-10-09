@@ -95,7 +95,7 @@ export const analyzeWithMultiApi = async (
 
     if (serverRes.ok) {
       const data = await serverRes.json();
-      data.usedProvider = data.usedProvider || 'Gemini 3.8 Flash (Server)';
+      data.usedProvider = data.usedProvider || 'Gemini 3.7 / 3.1 Flash (Server)';
       data.generationDurationMs = Math.round(performance.now() - startTime);
 
       // Track usage in apiManager if active key exists
@@ -109,164 +109,154 @@ export const analyzeWithMultiApi = async (
     } else {
       const errBody = await serverRes.json().catch(() => ({}));
       console.warn('Server-side Gemini returned non-OK status:', serverRes.status, errBody);
-      lastError = new Error(errBody?.error || `Server HTTP ${serverRes.status}`);
+      const rawMsg = errBody?.error || `Server HTTP ${serverRes.status}`;
+      lastError = new Error(rawMsg);
     }
   } catch (err: any) {
     console.warn('Direct server /api/analyze call error, falling back to multi-key rotation:', err);
     lastError = err;
   }
 
-  // 2. MULTI-KEY FAILOVER: If server-side key had an issue or user has custom keys (Friendli / OpenAI / Custom Gemini)
-  const maxAttempts = Math.max(apiManager.getKeys().length, 3);
+  // 2. MULTI-KEY FAILOVER: If user has custom keys (Custom Gemini / Friendli / OpenAI)
+  const allKeys = apiManager.getKeys();
+  const customKeys = allKeys.filter(k => k.key && k.key.trim().length > 5 && k.key !== 'SYSTEM_DEFAULT');
 
-  while (attempt < maxAttempts) {
-    attempt++;
-    const currentKey = apiManager.getActiveKey();
-
-    if (!currentKey || !currentKey.key || currentKey.key.trim().length < 5) {
-      break;
-    }
-
-    options.onStatusUpdate?.(
-      `বিকল্প এপিআই দিয়ে চেষ্টা করা হচ্ছে: ${currentKey.name} (${currentKey.provider.toUpperCase()})...`
-    );
-
-    try {
-      let resultText = '';
-
-      if (currentKey.provider === 'gemini') {
-        // Try server endpoint with customKey parameter
-        const res = await fetch('/api/analyze', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            base64Image: cleanBase64,
-            mimeType: imageMime,
-            customKey: currentKey.key.trim(),
-            fastMode: options.fastMode,
-            customAttire: options.customAttire,
-            customHeadline: options.customHeadline,
-          }),
-        });
-
-        if (!res.ok) {
-          const errBody = await res.json().catch(() => ({}));
-          throw new Error(errBody?.error || `Gemini API HTTP ${res.status}`);
-        }
-
-        const data = await res.json();
-        data.usedProvider = `${currentKey.name} (Gemini 3.8 Flash)`;
-        data.generationDurationMs = Math.round(performance.now() - startTime);
-        apiManager.incrementUsage(currentKey.id);
-        apiManager.updateKeyStatus(currentKey.id, 'active', undefined, data.generationDurationMs);
-        return data as AnalysisResult;
-      } else if (currentKey.provider === 'friendli') {
-        // Friendli AI OpenAI-compatible endpoint
-        const endpoint = (currentKey.endpoint || 'https://api.friendli.ai/serverless/v1').replace(/\/+$/, '');
-        const modelToUse = currentKey.model || 'meta-llama/Llama-3.2-11B-Vision-Instruct';
-
-        const res = await fetch(`${endpoint}/chat/completions`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${currentKey.key.trim()}`,
-          },
-          body: JSON.stringify({
-            model: modelToUse,
-            messages: [
-              {
-                role: 'user',
-                content: [
-                  { type: 'text', text: buildSystemPrompt(options) },
-                  { type: 'image_url', image_url: { url: dataUrl } },
-                ],
-              },
-            ],
-            temperature: 0.2,
-          }),
-        });
-
-        if (!res.ok) {
-          const errBody = await res.json().catch(() => ({}));
-          throw new Error(errBody?.error?.message || `Friendli AI HTTP ${res.status}`);
-        }
-
-        const data = await res.json();
-        resultText = data?.choices?.[0]?.message?.content || '';
-      } else if (currentKey.provider === 'openai') {
-        const endpoint = (currentKey.endpoint || 'https://api.openai.com/v1').replace(/\/+$/, '');
-        const modelToUse = currentKey.model || 'gpt-4o-mini';
-
-        const res = await fetch(`${endpoint}/chat/completions`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${currentKey.key.trim()}`,
-          },
-          body: JSON.stringify({
-            model: modelToUse,
-            messages: [
-              {
-                role: 'user',
-                content: [
-                  { type: 'text', text: buildSystemPrompt(options) },
-                  { type: 'image_url', image_url: { url: dataUrl } },
-                ],
-              },
-            ],
-            temperature: 0.2,
-            response_format: { type: 'json_object' },
-          }),
-        });
-
-        if (!res.ok) {
-          const errBody = await res.json().catch(() => ({}));
-          throw new Error(errBody?.error?.message || `OpenAI HTTP ${res.status}`);
-        }
-
-        const data = await res.json();
-        resultText = data?.choices?.[0]?.message?.content || '';
-      }
-
-      let cleaned = resultText.trim();
-      if (cleaned.startsWith('```json')) {
-        cleaned = cleaned.replace(/^```json\s*/, '').replace(/```\s*$/, '');
-      } else if (cleaned.startsWith('```')) {
-        cleaned = cleaned.replace(/^```\s*/, '').replace(/```\s*$/, '');
-      }
-
-      const parsed: AnalysisResult = JSON.parse(cleaned);
-      apiManager.incrementUsage(currentKey.id);
-      apiManager.updateKeyStatus(currentKey.id, 'active', undefined, Math.round(performance.now() - startTime));
-
-      parsed.usedProvider = `${currentKey.name} (${currentKey.provider.toUpperCase()})`;
-      parsed.generationDurationMs = Math.round(performance.now() - startTime);
-
-      return parsed;
-    } catch (err: any) {
-      lastError = err;
-      const errStr = String(err?.message || err);
-      console.warn(`Key ${currentKey.name} failed:`, errStr);
-
-      const isQuota =
-        errStr.includes('429') ||
-        errStr.includes('RESOURCE_EXHAUSTED') ||
-        errStr.includes('quota') ||
-        errStr.includes('limit');
-
-      const reason = isQuota
-        ? 'কোটা / লিমিট শেষ (Quota Exhausted)'
-        : errStr.slice(0, 80);
+  if (customKeys.length > 0) {
+    for (const currentKey of customKeys) {
+      if (currentKey.status === 'exhausted' || currentKey.status === 'error') continue;
 
       options.onStatusUpdate?.(
-        `⚠️ ${currentKey.name} লিমিট শেষ (${reason})! পরবর্তী কী-তে অটোমেটিক সুইচ করা হচ্ছে...`
+        `বিকল্প এপিআই দিয়ে চেষ্টা করা হচ্ছে: ${currentKey.name} (${currentKey.provider.toUpperCase()})...`
       );
 
-      const nextKey = apiManager.rotateToNextKey(currentKey.id, reason);
-      if (!nextKey) break;
-      await new Promise(r => setTimeout(r, 600));
+      try {
+        let resultText = '';
+
+        if (currentKey.provider === 'gemini') {
+          // Try server endpoint with user's custom Gemini key
+          const res = await fetch('/api/analyze', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              base64Image: cleanBase64,
+              mimeType: imageMime,
+              customKey: currentKey.key.trim(),
+              fastMode: options.fastMode,
+              customAttire: options.customAttire,
+              customHeadline: options.customHeadline,
+            }),
+          });
+
+          if (!res.ok) {
+            const errBody = await res.json().catch(() => ({}));
+            throw new Error(errBody?.error || `Gemini API HTTP ${res.status}`);
+          }
+
+          const data = await res.json();
+          data.usedProvider = `${currentKey.name} (Custom Key)`;
+          data.generationDurationMs = Math.round(performance.now() - startTime);
+          apiManager.incrementUsage(currentKey.id);
+          apiManager.updateKeyStatus(currentKey.id, 'active', undefined, data.generationDurationMs);
+          return data as AnalysisResult;
+        } else if (currentKey.provider === 'friendli') {
+          // Friendli AI OpenAI-compatible endpoint
+          const endpoint = (currentKey.endpoint || 'https://api.friendli.ai/serverless/v1').replace(/\/+$/, '');
+          const modelToUse = currentKey.model || 'meta-llama/Llama-3.2-11B-Vision-Instruct';
+
+          const res = await fetch(`${endpoint}/chat/completions`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${currentKey.key.trim()}`,
+            },
+            body: JSON.stringify({
+              model: modelToUse,
+              messages: [
+                {
+                  role: 'user',
+                  content: [
+                    { type: 'text', text: buildSystemPrompt(options) },
+                    { type: 'image_url', image_url: { url: dataUrl } },
+                  ],
+                },
+              ],
+              temperature: 0.2,
+            }),
+          });
+
+          if (!res.ok) {
+            const errBody = await res.json().catch(() => ({}));
+            throw new Error(errBody?.error?.message || `Friendli AI HTTP ${res.status}`);
+          }
+
+          const data = await res.json();
+          resultText = data?.choices?.[0]?.message?.content || '';
+        } else if (currentKey.provider === 'openai') {
+          const endpoint = (currentKey.endpoint || 'https://api.openai.com/v1').replace(/\/+$/, '');
+          const modelToUse = currentKey.model || 'gpt-4o-mini';
+
+          const res = await fetch(`${endpoint}/chat/completions`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${currentKey.key.trim()}`,
+            },
+            body: JSON.stringify({
+              model: modelToUse,
+              messages: [
+                {
+                  role: 'user',
+                  content: [
+                    { type: 'text', text: buildSystemPrompt(options) },
+                    { type: 'image_url', image_url: { url: dataUrl } },
+                  ],
+                },
+              ],
+              temperature: 0.2,
+              response_format: { type: 'json_object' },
+            }),
+          });
+
+          if (!res.ok) {
+            const errBody = await res.json().catch(() => ({}));
+            throw new Error(errBody?.error?.message || `OpenAI HTTP ${res.status}`);
+          }
+
+          const data = await res.json();
+          resultText = data?.choices?.[0]?.message?.content || '';
+        }
+
+        let cleaned = resultText.trim();
+        if (cleaned.startsWith('```json')) {
+          cleaned = cleaned.replace(/^```json\s*/, '').replace(/```\s*$/, '');
+        } else if (cleaned.startsWith('```')) {
+          cleaned = cleaned.replace(/^```\s*/, '').replace(/```\s*$/, '');
+        }
+
+        const parsed: AnalysisResult = JSON.parse(cleaned);
+        apiManager.incrementUsage(currentKey.id);
+        apiManager.updateKeyStatus(currentKey.id, 'active', undefined, Math.round(performance.now() - startTime));
+
+        parsed.usedProvider = `${currentKey.name} (${currentKey.provider.toUpperCase()})`;
+        parsed.generationDurationMs = Math.round(performance.now() - startTime);
+
+        return parsed;
+      } catch (err: any) {
+        lastError = err;
+        console.warn(`Key ${currentKey.name} failed:`, err);
+        apiManager.updateKeyStatus(currentKey.id, 'error', String(err?.message || err).slice(0, 80));
+      }
     }
   }
 
-  throw lastError || new Error('ছবি বিশ্লেষণ ব্যর্থ হয়েছে। অনুগ্রহ করে API Key কনফিগারেশন চেক করুন।');
+  // Friendly human readable error message
+  const rawErrStr = String(lastError?.message || lastError || '');
+  if (rawErrStr.includes('429') || rawErrStr.includes('RESOURCE_EXHAUSTED') || rawErrStr.includes('quota')) {
+    throw new Error('গুগল জেমিনির ফ্রি লিমিট সাময়িকভাবে শেষ হয়েছে (Daily Quota Limit Exceeded)। অনুগ্রহ করে আপনার নিজস্ব ফ্রি API Key যুক্ত করুন বা পুনরায় চেষ্টা করুন।');
+  }
+  if (rawErrStr.includes('404')) {
+    throw new Error('মডেল কানেকশন রিফ্রেশ করা প্রয়োজন। অনুগ্রহ করে আবার "প্রম্পট তৈরি করুন" বাটনে ক্লিক করুন।');
+  }
+
+  throw lastError || new Error('ছবি বিশ্লেষণ করতে সমস্যা হয়েছে। অনুগ্রহ করে আবার চেষ্টা করুন।');
 };

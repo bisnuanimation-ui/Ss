@@ -20,11 +20,15 @@ import {
   Share2,
   Wand2,
   Cpu,
-  ArrowRight
+  ArrowRight,
+  FileText,
+  FileDown,
+  Loader2
 } from 'lucide-react';
 import { AnalysisResult, GraphicCustomization } from '../types';
 import GraphicDeconstructionCard from './GraphicDeconstructionCard';
 import ShareModal from './ShareModal';
+import { exportAnalysisToPdf } from '../services/pdfExportService';
 
 interface ResultsViewProps {
   result: AnalysisResult;
@@ -43,6 +47,9 @@ export const ResultsView: React.FC<ResultsViewProps> = ({
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
   const [aspectRatio, setAspectRatio] = useState<'16:9' | '9:16' | '1:1' | '4:5'>('16:9');
   const [isShareOpen, setIsShareOpen] = useState(false);
+  const [isExportingPdf, setIsExportingPdf] = useState(false);
+  const [pdfSuccess, setPdfSuccess] = useState(false);
+  const [pdfError, setPdfError] = useState<string | null>(null);
   
   // Custom camera angle and realistic background modifiers
   const [selectedCameraAngle, setSelectedCameraAngle] = useState<string>('');
@@ -52,6 +59,27 @@ export const ResultsView: React.FC<ResultsViewProps> = ({
     navigator.clipboard.writeText(text);
     setCopiedKey(key);
     setTimeout(() => setCopiedKey(null), 2000);
+  };
+
+  const handleDownloadPdf = async () => {
+    if (isExportingPdf) return;
+    try {
+      setIsExportingPdf(true);
+      setPdfError(null);
+      await exportAnalysisToPdf({
+        result,
+        imageUrl,
+        activePrompt: getActivePrompt(),
+        aspectRatio
+      });
+      setPdfSuccess(true);
+      setTimeout(() => setPdfSuccess(false), 3000);
+    } catch (err: any) {
+      console.error('Failed to export PDF:', err);
+      setPdfError('পিডিএফ ডাউনলোড করতে সমস্যা হয়েছে। আবার চেষ্টা করুন।');
+    } finally {
+      setIsExportingPdf(false);
+    }
   };
 
   const getActivePrompt = (): string => {
@@ -162,14 +190,39 @@ Tags: ${result.suggestedTags.join(', ')}
           )}
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          {/* PDF Export Button (Clean formatted PDF Document download) */}
+          <button
+            onClick={handleDownloadPdf}
+            disabled={isExportingPdf}
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs sm:text-sm font-bold shadow-md shadow-emerald-600/30 transition-all cursor-pointer disabled:opacity-60"
+            title="সম্পূর্ণ রিপোর্ট ও প্রম্পট পিডিএফ ফাইলে ডাউনলোড করুন"
+          >
+            {isExportingPdf ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin" />
+                <span>পিডিএফ হচ্ছে...</span>
+              </>
+            ) : pdfSuccess ? (
+              <>
+                <Check className="w-4 h-4 text-emerald-200" />
+                <span>পিডিএফ ডাউনলোড সম্পন্ন!</span>
+              </>
+            ) : (
+              <>
+                <FileText className="w-4 h-4" />
+                <span>পিডিএফ ডাউনলোড (PDF)</span>
+              </>
+            )}
+          </button>
+
           {/* Share Button (User requested: "একটা তুমি শেয়ার লিঙ্ক দিবা") */}
           <button
             onClick={() => setIsShareOpen(true)}
-            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white text-xs sm:text-sm font-bold shadow-md shadow-purple-600/30 transition-all cursor-pointer"
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white text-xs sm:text-sm font-bold shadow-md shadow-purple-600/30 transition-all cursor-pointer"
           >
             <Share2 className="w-4 h-4" />
-            <span>শেয়ার লিঙ্ক (Share Link)</span>
+            <span>শেয়ার লিঙ্ক</span>
           </button>
 
           <button
@@ -273,7 +326,7 @@ Tags: ${result.suggestedTags.join(', ')}
                 এই প্রম্পটটি Midjourney, Flux.1, SDXL বা DALL-E 3 তে সরাসরি পেস্ট করুন
               </span>
 
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 <button
                   onClick={() => copyText(getActivePrompt(), 'active-prompt')}
                   className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white text-xs sm:text-sm font-bold shadow-lg shadow-purple-600/30 transition-all cursor-pointer"
@@ -282,10 +335,25 @@ Tags: ${result.suggestedTags.join(', ')}
                   <span>{copiedKey === 'active-prompt' ? 'কপি সম্পন্ন!' : '১-ক্লিকে কপি করুন'}</span>
                 </button>
 
+                {/* PDF Download Button right in prompt actions */}
+                <button
+                  onClick={handleDownloadPdf}
+                  disabled={isExportingPdf}
+                  className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/30 text-emerald-300 hover:text-emerald-200 text-xs sm:text-sm font-bold transition-all cursor-pointer disabled:opacity-50"
+                  title="পিডিএফ ফরম্যাটে সম্পূর্ণ বিশ্লেষণ রিপোর্ট ডাউনলোড করুন"
+                >
+                  {isExportingPdf ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <FileDown className="w-4 h-4 text-emerald-400" />
+                  )}
+                  <span>{isExportingPdf ? 'তৈরি হচ্ছে...' : 'PDF ডাউনলোড'}</span>
+                </button>
+
                 <button
                   onClick={downloadPromptTxt}
                   className="p-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-neutral-300 hover:text-white transition-colors cursor-pointer"
-                  title="সম্পূর্ণ রিপোর্ট ডাউনলোড করুন (.txt)"
+                  title="টেক্সট ফাইল ডাউনলোড করুন (.txt)"
                 >
                   <Download className="w-4 h-4" />
                 </button>
@@ -392,6 +460,73 @@ Tags: ${result.suggestedTags.join(', ')}
               #{tag}
             </span>
           ))}
+        </div>
+      </div>
+
+      {/* Export & Download Center (User request: clean formatted PDF document download) */}
+      <div className="p-5 sm:p-6 rounded-3xl bg-gradient-to-r from-[#171330] via-[#131026] to-[#120e24] border border-emerald-500/30 shadow-xl relative overflow-hidden">
+        <div className="absolute top-0 right-0 w-80 h-80 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none" />
+
+        <div className="relative z-10 flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
+          <div className="space-y-2 max-w-xl">
+            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-xs font-bold">
+              <FileText className="w-3.5 h-3.5" />
+              <span>পিডিএফ ডকুমেন্ট এক্সপোর্ট সেন্টার (Export Ready)</span>
+            </div>
+            <h3 className="text-lg font-bold text-white flex items-center gap-2">
+              <span>সম্পূর্ণ এআই প্রম্পট ও ফরেনসিক অ্যানালিসিস রিপোর্ট</span>
+            </h3>
+            <p className="text-xs text-neutral-300 leading-relaxed">
+              আপলোডকৃত ছবির সম্পূর্ণ রিভার্স-ইঞ্জিনিয়ারিং স্পেসিফিকেশন, মাস্টার প্রম্পট, মিডজার্নি ভেরিয়েন্ট, আলোর গতিপথ (Light Trajectory), টেক্সচার গ্রাইন্ডিং ও কালার প্যালেট একটি চমৎকার A4 পিডিএফ ডকুমেন্টে ডাউনলোড করুন।
+            </p>
+
+            <div className="flex flex-wrap gap-2 pt-1 text-[11px] text-emerald-300/90 font-medium">
+              <span className="px-2 py-0.5 rounded-lg bg-emerald-950/40 border border-emerald-500/20">✓ মূল ছবির প্রিভিউ ও কালার হেক্স</span>
+              <span className="px-2 py-0.5 rounded-lg bg-emerald-950/40 border border-emerald-500/20">✓ DSLR লেন্স ও ৩x৩ গ্রিড</span>
+              <span className="px-2 py-0.5 rounded-lg bg-emerald-950/40 border border-emerald-500/20">✓ ৪টি প্রম্পট ভেরিয়েন্ট</span>
+            </div>
+
+            {pdfError && (
+              <p className="text-xs text-rose-400 font-semibold pt-1">
+                {pdfError}
+              </p>
+            )}
+          </div>
+
+          <div className="flex flex-col sm:flex-row items-stretch gap-3 shrink-0 w-full md:w-auto">
+            {/* Primary PDF Download Button */}
+            <button
+              onClick={handleDownloadPdf}
+              disabled={isExportingPdf}
+              className="inline-flex items-center justify-center gap-2.5 px-6 py-3.5 rounded-2xl bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-sm shadow-xl shadow-emerald-600/30 transition-all cursor-pointer disabled:opacity-60"
+            >
+              {isExportingPdf ? (
+                <>
+                  <Loader2 className="w-5 h-5 animate-spin" />
+                  <span>পিডিএফ প্রস্তুত হচ্ছে...</span>
+                </>
+              ) : pdfSuccess ? (
+                <>
+                  <Check className="w-5 h-5 text-white" />
+                  <span>ডাউনলোড সফল হয়েছে!</span>
+                </>
+              ) : (
+                <>
+                  <FileDown className="w-5 h-5 text-emerald-200" />
+                  <span>ক্লিন PDF ডাউনলোড (.pdf)</span>
+                </>
+              )}
+            </button>
+
+            {/* Plain TXT File Button */}
+            <button
+              onClick={downloadPromptTxt}
+              className="inline-flex items-center justify-center gap-2 px-4 py-3.5 rounded-2xl bg-white/5 hover:bg-white/10 border border-white/10 text-neutral-300 hover:text-white font-semibold text-xs sm:text-sm transition-all cursor-pointer"
+            >
+              <Download className="w-4 h-4 text-purple-400" />
+              <span>টেক্সট ফাইল (.txt)</span>
+            </button>
+          </div>
         </div>
       </div>
 
