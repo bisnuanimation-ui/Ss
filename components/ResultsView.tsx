@@ -17,20 +17,32 @@ import {
   Building2,
   Compass,
   CheckCircle2,
-  Video
+  Share2,
+  Wand2,
+  Cpu,
+  ArrowRight
 } from 'lucide-react';
-import { AnalysisResult } from '../types';
+import { AnalysisResult, GraphicCustomization } from '../types';
+import GraphicDeconstructionCard from './GraphicDeconstructionCard';
+import ShareModal from './ShareModal';
 
 interface ResultsViewProps {
   result: AnalysisResult;
   onReset: () => void;
   imageUrl?: string | null;
+  onApplyCustomization?: (customization: GraphicCustomization) => void;
 }
 
-export const ResultsView: React.FC<ResultsViewProps> = ({ result, onReset, imageUrl }) => {
-  const [activeTab, setActiveTab] = useState<'master' | 'midjourney' | 'swap' | 'style' | 'short'>('master');
+export const ResultsView: React.FC<ResultsViewProps> = ({ 
+  result, 
+  onReset, 
+  imageUrl,
+  onApplyCustomization 
+}) => {
+  const [activeTab, setActiveTab] = useState<'master' | 'forensic' | 'midjourney' | 'swap' | 'style' | 'short'>('master');
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
   const [aspectRatio, setAspectRatio] = useState<'16:9' | '9:16' | '1:1' | '4:5'>('16:9');
+  const [isShareOpen, setIsShareOpen] = useState(false);
   
   // Custom camera angle and realistic background modifiers
   const [selectedCameraAngle, setSelectedCameraAngle] = useState<string>('');
@@ -49,7 +61,7 @@ export const ResultsView: React.FC<ResultsViewProps> = ({ result, onReset, image
         base = result.masterPrompt;
         break;
       case 'midjourney':
-        base = `${result.masterPrompt} --ar ${aspectRatio} --v 6.1 --style raw`;
+        base = `${result.masterPrompt} --ar ${aspectRatio} --v 6.1 --style raw --stylize 180`;
         break;
       case 'swap':
         base = result.subjectSwapPrompt;
@@ -60,6 +72,8 @@ export const ResultsView: React.FC<ResultsViewProps> = ({ result, onReset, image
       case 'short':
         base = result.shortPrompt;
         break;
+      default:
+        base = result.masterPrompt;
     }
 
     const additions: string[] = [];
@@ -79,21 +93,32 @@ export const ResultsView: React.FC<ResultsViewProps> = ({ result, onReset, image
   const downloadPromptTxt = () => {
     const fullText = `=== PROMPTVISION AI: REVERSE PROMPT REPORT ===
 Generated on: ${new Date().toLocaleString()}
+Provider Used: ${result.usedProvider || 'Multi-API Engine'}
 
-[MASTER PROMPT (WITH OPTICS & REAL-WORLD BACKGROUND)]
+[MASTER PROMPT (WITH OPTICS, LIGHT PATH & REAL-WORLD BACKGROUND)]
 ${getActivePrompt()}
 
-[MIDJOURNEY PROMPT]
+[MIDJOURNEY V6.1 PROMPT]
 ${result.midjourneyPrompt}
 
-[SUBJECT SWAP TEMPLATE (Use with other subjects)]
+[SHORT FAST PROMPT]
+${result.shortPrompt}
+
+[SUBJECT SWAP TEMPLATE]
 ${result.subjectSwapPrompt}
 
-[STYLE TRANSFER PROMPT (Use with other scenes)]
+[STYLE TRANSFER PROMPT]
 ${result.styleTransferPrompt}
 
-[SHORT PROMPT]
-${result.shortPrompt}
+[LIGHT ORIGIN & TRAJECTORY]
+Origin: ${result.lightTrajectory?.origin || 'Natural / Studio light'}
+Path: ${result.lightTrajectory?.path || 'Direct path'}
+Impact Zones: ${result.lightTrajectory?.impact || 'Subject highlights & drop shadow'}
+
+[TEXTURE & GRINDING MAP]
+Heavy Grinding: ${result.graphicDesign?.textureGrinding?.heavyGrindingZones || 'N/A'}
+Smooth Zones: ${result.graphicDesign?.textureGrinding?.smoothZones || 'N/A'}
+Texture Type: ${result.graphicDesign?.textureGrinding?.textureType || 'N/A'}
 
 [NEGATIVE PROMPT (ANTI-CGI)]
 ${result.negativePrompt}
@@ -102,7 +127,7 @@ ${result.negativePrompt}
 Camera Angle & Optics: ${result.cameraAndComposition}
 Subject & Attire: ${result.subjectAndAttire}
 Lighting & Atmosphere: ${result.lightingAndAtmosphere}
-Art Style & Medium: ${result.artStyle}
+Art Style: ${result.artStyle}
 Color Palette: ${result.colorPalette.join(', ')} (${result.colorDescription})
 Tags: ${result.suggestedTags.join(', ')}
 `;
@@ -111,450 +136,272 @@ Tags: ${result.suggestedTags.join(', ')}
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `PromptVision-AI-Prompt-${Date.now()}.txt`;
+    link.download = `PromptVision-AI-Report-${Date.now()}.txt`;
     link.click();
     URL.revokeObjectURL(url);
   };
 
   return (
-    <div className="w-full max-w-6xl mx-auto space-y-10">
-      {/* Top Banner / Master Prompt Card */}
-      <motion.div 
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="relative bg-gradient-to-b from-neutral-900/90 to-neutral-950/95 border border-white/10 rounded-3xl p-6 md:p-8 backdrop-blur-2xl shadow-2xl overflow-hidden"
-      >
-        <div className="absolute top-0 right-0 w-96 h-96 bg-blue-500/10 rounded-full blur-[140px] pointer-events-none" />
-        <div className="absolute -bottom-10 -left-10 w-80 h-80 bg-purple-500/10 rounded-full blur-[120px] pointer-events-none" />
-
-        {/* Realism & Camera Quality Badges */}
-        <div className="flex flex-wrap items-center gap-2.5 mb-5">
-          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-            <CheckCircle2 className="w-3.5 h-3.5" />
-            <span>100% Real-World Background (নো ফেক/CGI লুক)</span>
+    <div className="w-full max-w-6xl mx-auto space-y-8 animate-in fade-in">
+      {/* Top Bar with Provider Info, Share & Reset */}
+      <div className="flex items-center justify-between flex-wrap gap-3 p-3.5 sm:p-4 rounded-2xl bg-[#120f24] border border-purple-500/20 shadow-md">
+        <div className="flex items-center gap-2.5 flex-wrap">
+          <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-xs font-semibold">
+            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+            <span>প্রম্পট তৈরি সম্পন্ন</span>
           </div>
 
-          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-semibold bg-blue-500/10 text-blue-400 border border-blue-500/20">
-            <Camera className="w-3.5 h-3.5" />
-            <span>নিখুঁত ক্যামেরা অ্যাঙ্গেল ও লেন্স স্পেসিফিকেশন</span>
-          </div>
-
-          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-semibold bg-purple-500/10 text-purple-400 border border-purple-500/20">
-            <Building2 className="w-3.5 h-3.5" />
-            <span>Physical Architectural Realism</span>
-          </div>
-        </div>
-
-        {/* Header & Main Actions */}
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6 border-b border-white/10 pb-6">
-          <div>
-            <h2 className="text-2xl md:text-3xl font-bold text-white tracking-tight flex items-center gap-3">
-              <span>Generated Image Prompt</span>
-            </h2>
-            <p className="text-xs md:text-sm text-neutral-400 mt-1">
-              যেকোনো AI ইমেজ জেনারেটরে হুবহু একই কোয়ালিটি, বাস্তবসম্মত ব্যাকগ্রাউন্ড এবং নিখুঁত ক্যামেরা অ্যাঙ্গেল দিয়ে ছবি তৈরি করুন।
-            </p>
-          </div>
-
-          <div className="flex items-center gap-3 shrink-0">
-            <button
-              onClick={() => copyText(getActivePrompt(), 'main-prompt')}
-              className="px-5 py-2.5 rounded-xl font-medium text-xs flex items-center gap-2 transition-all shadow-lg active:scale-95 bg-white text-black hover:bg-neutral-200"
-            >
-              {copiedKey === 'main-prompt' ? (
-                <>
-                  <Check className="w-4 h-4 text-emerald-600" />
-                  <span>Copied! (কপি হয়েছে)</span>
-                </>
-              ) : (
-                <>
-                  <Copy className="w-4 h-4" />
-                  <span>Copy Master Prompt</span>
-                </>
+          {result.usedProvider && (
+            <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-purple-950/40 border border-purple-500/25 text-purple-200 text-xs">
+              <Cpu className="w-3 h-3 text-purple-400" />
+              <span>{result.usedProvider}</span>
+              {result.generationDurationMs && (
+                <span className="text-emerald-400 font-mono text-[11px]">⚡ {result.generationDurationMs}ms</span>
               )}
-            </button>
-
-            <button
-              onClick={downloadPromptTxt}
-              title="Download Prompt Report as .txt"
-              className="p-2.5 rounded-xl bg-white/5 border border-white/10 text-neutral-300 hover:text-white hover:bg-white/10 transition-colors"
-            >
-              <Download className="w-4 h-4" />
-            </button>
-
-            <button
-              onClick={onReset}
-              className="p-2.5 rounded-xl bg-white/5 border border-white/10 text-neutral-300 hover:text-white hover:bg-white/10 transition-colors"
-              title="Analyze New Image"
-            >
-              <RefreshCw className="w-4 h-4" />
-            </button>
-          </div>
-        </div>
-
-        {/* Prompt Variant Selector Tabs */}
-        <div className="flex flex-wrap gap-2 mb-4">
-          <button
-            onClick={() => setActiveTab('master')}
-            className={`px-4 py-2 rounded-xl text-xs font-medium transition-all ${
-              activeTab === 'master'
-                ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/20'
-                : 'bg-white/5 text-neutral-400 hover:text-white hover:bg-white/10 border border-white/5'
-            }`}
-          >
-            🔥 Master Prompt (Universal)
-          </button>
-          <button
-            onClick={() => setActiveTab('swap')}
-            className={`px-4 py-2 rounded-xl text-xs font-medium transition-all ${
-              activeTab === 'swap'
-                ? 'bg-purple-600 text-white shadow-lg shadow-purple-500/20'
-                : 'bg-white/5 text-neutral-400 hover:text-white hover:bg-white/10 border border-white/5'
-            }`}
-          >
-            🔄 Subject Swap (অন্য চরিত্র/বিষয়ে ব্যবহার)
-          </button>
-          <button
-            onClick={() => setActiveTab('style')}
-            className={`px-4 py-2 rounded-xl text-xs font-medium transition-all ${
-              activeTab === 'style'
-                ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/20'
-                : 'bg-white/5 text-neutral-400 hover:text-white hover:bg-white/10 border border-white/5'
-            }`}
-          >
-            🎨 Style Transfer (আর্ট স্টাইল রিইউজ)
-          </button>
-          <button
-            onClick={() => setActiveTab('midjourney')}
-            className={`px-4 py-2 rounded-xl text-xs font-medium transition-all ${
-              activeTab === 'midjourney'
-                ? 'bg-sky-600 text-white shadow-lg shadow-sky-500/20'
-                : 'bg-white/5 text-neutral-400 hover:text-white hover:bg-white/10 border border-white/5'
-            }`}
-          >
-            ⚡ Midjourney v6 Format
-          </button>
-          <button
-            onClick={() => setActiveTab('short')}
-            className={`px-4 py-2 rounded-xl text-xs font-medium transition-all ${
-              activeTab === 'short'
-                ? 'bg-neutral-700 text-white shadow-lg'
-                : 'bg-white/5 text-neutral-400 hover:text-white hover:bg-white/10 border border-white/5'
-            }`}
-          >
-            📝 Short Prompt
-          </button>
-        </div>
-
-        {/* Tab Description Tip */}
-        <div className="text-xs text-neutral-400 mb-3 flex items-center gap-1.5">
-          {activeTab === 'swap' && (
-            <span className="text-purple-300 font-medium">
-              💡 Tip: Replace <code>[Insert Subject / Character Here]</code> with your desired character or object to recreate this scene!
-            </span>
-          )}
-          {activeTab === 'style' && (
-            <span className="text-indigo-300 font-medium">
-              💡 Tip: Combine this style prompt with any other prompt to apply this image's exact lighting, camera, and art mood!
-            </span>
-          )}
-          {activeTab === 'midjourney' && (
-            <span className="text-sky-300 font-medium">
-              💡 Formatted with Midjourney flags: <code>--ar {aspectRatio} --v 6.1 --style raw</code>
-            </span>
-          )}
-          {activeTab === 'master' && (
-            <span className="text-neutral-400 font-medium">
-              💡 Complete detailed prompt with precise camera optics and authentic physical environment.
-            </span>
+            </div>
           )}
         </div>
 
-        {/* Prompt Output Box */}
-        <div className="relative group">
-          <div className="w-full bg-black/60 border border-white/10 rounded-2xl p-5 md:p-6 text-neutral-200 font-mono text-sm leading-relaxed tracking-normal select-all overflow-x-auto min-h-[140px]">
-            {getActivePrompt()}
-          </div>
+        <div className="flex items-center gap-2">
+          {/* Share Button (User requested: "একটা তুমি শেয়ার লিঙ্ক দিবা") */}
           <button
-            onClick={() => copyText(getActivePrompt(), 'prompt-box')}
-            className="absolute top-3 right-3 p-2.5 rounded-xl bg-white/10 hover:bg-white/20 text-neutral-300 hover:text-white transition-all backdrop-blur-md opacity-80 group-hover:opacity-100"
-            title="Copy this prompt"
+            onClick={() => setIsShareOpen(true)}
+            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white text-xs sm:text-sm font-bold shadow-md shadow-purple-600/30 transition-all cursor-pointer"
           >
-            {copiedKey === 'prompt-box' ? (
-              <Check className="w-4 h-4 text-emerald-400" />
-            ) : (
-              <Copy className="w-4 h-4" />
-            )}
+            <Share2 className="w-4 h-4" />
+            <span>শেয়ার লিঙ্ক (Share Link)</span>
           </button>
-        </div>
 
-        {/* Camera Angle & Background Realism Control Bars */}
-        <div className="mt-6 pt-5 border-t border-white/10 space-y-4">
-          {/* Camera Angle Selector */}
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-xs font-semibold text-neutral-300 flex items-center gap-1.5 mr-2">
-              <Camera className="w-3.5 h-3.5 text-blue-400" />
-              <span>Camera Angle (ক্যামেরা অ্যাঙ্গেল):</span>
-            </span>
-            {[
-              { label: 'Low-Angle Hero (নিচু কোণ)', val: 'dramatic low-angle hero shot, upward perspective, grounded elevation' },
-              { label: 'Eye-Level 85mm Portrait (আই-লেভেল)', val: 'eye-level medium close-up, 85mm prime lens f/1.4, shallow depth of field' },
-              { label: 'Wide 24mm Cinematic (ওয়াইড)', val: '24mm cinematic wide-angle lens, environmental framing, golden ratio composition' },
-              { label: 'Dutch Angle Tilt (ডাচ টিল্ট)', val: 'dutch angle tilt, dynamic tension framing, 35mm anamorphic' },
-              { label: 'High-Angle Look-Down (উপরের কোণ)', val: 'high-angle perspective, elevated viewpoint looking slightly downward' },
-            ].map((cam) => (
-              <button
-                key={cam.label}
-                onClick={() =>
-                  setSelectedCameraAngle(prev => (prev === cam.val ? '' : cam.val))
-                }
-                className={`px-3 py-1.5 rounded-xl text-xs font-medium transition-all ${
-                  selectedCameraAngle === cam.val
-                    ? 'bg-blue-500/25 text-blue-300 border border-blue-500/50 shadow-sm'
-                    : 'bg-white/5 text-neutral-400 hover:text-white border border-white/5 hover:bg-white/10'
-                }`}
-              >
-                {cam.label}
-              </button>
-            ))}
-          </div>
-
-          {/* Background Realism Booster */}
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-xs font-semibold text-neutral-300 flex items-center gap-1.5 mr-2">
-              <Building2 className="w-3.5 h-3.5 text-emerald-400" />
-              <span>Realism Boost (বাস্তবসম্মত ব্যাকগ্রাউন্ড):</span>
-            </span>
-            {[
-              { label: '✓ Real Architecture (খাঁটি পরিবেশ)', val: 'authentic real-world environment, real architectural textures, natural ambient daylight' },
-              { label: '+ Physical Textures (দেয়াল/মেঝের টেক্সচার)', val: 'tactile physical textures, real plaster, weathered wood grain, authentic brickwork' },
-              { label: '+ Natural Daylight Bounce (প্রাকৃতিক আলো)', val: 'natural sunlight bounces, atmospheric dust motes, soft ambient shadows, no plastic sheen' },
-              { label: '+ Anti-CGI Guard (নো থ্রিডি লুক)', val: 'photorealistic documentary aesthetic, zero 3d render look, raw camera sensor fidelity' },
-            ].map((boost) => (
-              <button
-                key={boost.label}
-                onClick={() =>
-                  setSelectedRealismBoost(prev => (prev === boost.val ? '' : boost.val))
-                }
-                className={`px-3 py-1.5 rounded-xl text-xs font-medium transition-all ${
-                  selectedRealismBoost === boost.val
-                    ? 'bg-emerald-500/25 text-emerald-300 border border-emerald-500/50 shadow-sm'
-                    : 'bg-white/5 text-neutral-400 hover:text-white border border-white/5 hover:bg-white/10'
-                }`}
-              >
-                {boost.label}
-              </button>
-            ))}
-          </div>
-
-          {/* Aspect Ratio */}
-          <div className="flex items-center gap-2 pt-2">
-            <span className="text-xs font-semibold text-neutral-400">Aspect Ratio:</span>
-            {(['16:9', '9:16', '1:1', '4:5'] as const).map((ratio) => (
-              <button
-                key={ratio}
-                onClick={() => setAspectRatio(ratio)}
-                className={`px-3 py-1 rounded-lg text-xs font-medium transition-all ${
-                  aspectRatio === ratio
-                    ? 'bg-white/20 text-white border border-white/30'
-                    : 'bg-white/5 text-neutral-400 hover:text-white border border-transparent'
-                }`}
-              >
-                {ratio}
-              </button>
-            ))}
-          </div>
-        </div>
-      </motion.div>
-
-      {/* Suggested Tags & Keywords */}
-      {result.suggestedTags && result.suggestedTags.length > 0 && (
-        <div className="bg-neutral-900/60 border border-white/5 rounded-2xl p-4 flex flex-wrap items-center gap-2">
-          <div className="flex items-center gap-1.5 text-xs font-semibold text-neutral-400 mr-2">
-            <Tag className="w-3.5 h-3.5 text-blue-400" />
-            <span>Keyword Tags:</span>
-          </div>
-          {result.suggestedTags.map((tag, idx) => (
-            <button
-              key={idx}
-              onClick={() => copyText(tag, `tag-${idx}`)}
-              className="px-3 py-1 rounded-full text-xs bg-white/5 hover:bg-white/10 border border-white/10 text-neutral-300 hover:text-white transition-all flex items-center gap-1.5 group"
-              title="Click to copy tag"
-            >
-              <span>{tag}</span>
-              {copiedKey === `tag-${idx}` ? (
-                <Check className="w-3 h-3 text-emerald-400" />
-              ) : (
-                <Copy className="w-3 h-3 opacity-40 group-hover:opacity-100" />
-              )}
-            </button>
-          ))}
-        </div>
-      )}
-
-      {/* Detailed Breakdown Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-        {/* Camera & Composition (Highlighted) */}
-        <div className="bg-neutral-900/80 border border-blue-500/20 rounded-2xl p-5 hover:border-blue-500/40 transition-all flex flex-col justify-between shadow-lg">
-          <div>
-            <div className="flex items-center gap-2 mb-3">
-              <div className="p-2 rounded-xl bg-blue-500/10 text-blue-400 border border-blue-500/20">
-                <Camera className="w-4 h-4" />
-              </div>
-              <h3 className="text-xs font-bold uppercase tracking-wider text-blue-300">
-                Camera Angle & Optics (নিখুঁত ক্যামেরা)
-              </h3>
-            </div>
-            <p className="text-xs text-neutral-300 leading-relaxed font-mono">
-              {result.cameraAndComposition}
-            </p>
-          </div>
           <button
-            onClick={() => copyText(result.cameraAndComposition, 'card-camera')}
-            className="mt-4 text-[11px] text-blue-400 hover:text-blue-300 flex items-center gap-1.5 self-start transition-colors"
+            onClick={onReset}
+            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-neutral-300 hover:text-white text-xs font-semibold transition-all cursor-pointer"
           >
-            {copiedKey === 'card-camera' ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-            <span>Copy Camera Specs</span>
-          </button>
-        </div>
-
-        {/* Lighting & Real-World Atmosphere */}
-        <div className="bg-neutral-900/80 border border-emerald-500/20 rounded-2xl p-5 hover:border-emerald-500/40 transition-all flex flex-col justify-between shadow-lg">
-          <div>
-            <div className="flex items-center gap-2 mb-3">
-              <div className="p-2 rounded-xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                <Sun className="w-4 h-4" />
-              </div>
-              <h3 className="text-xs font-bold uppercase tracking-wider text-emerald-300">
-                Lighting & Atmosphere (বাস্তব আলো ও পরিবেশ)
-              </h3>
-            </div>
-            <p className="text-xs text-neutral-300 leading-relaxed">
-              {result.lightingAndAtmosphere}
-            </p>
-          </div>
-          <button
-            onClick={() => copyText(result.lightingAndAtmosphere, 'card-lighting')}
-            className="mt-4 text-[11px] text-emerald-400 hover:text-emerald-300 flex items-center gap-1.5 self-start transition-colors"
-          >
-            {copiedKey === 'card-lighting' ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-            <span>Copy Lighting</span>
-          </button>
-        </div>
-
-        {/* Subject & Attire */}
-        <div className="bg-neutral-900/70 border border-white/10 rounded-2xl p-5 hover:border-white/20 transition-all flex flex-col justify-between">
-          <div>
-            <div className="flex items-center gap-2 mb-3">
-              <div className="p-2 rounded-xl bg-pink-500/10 text-pink-400 border border-pink-500/20">
-                <User className="w-4 h-4" />
-              </div>
-              <h3 className="text-xs font-bold uppercase tracking-wider text-neutral-300">
-                Subject & Attire (পোশাক ও ভঙ্গি)
-              </h3>
-            </div>
-            <p className="text-xs text-neutral-400 leading-relaxed">
-              {result.subjectAndAttire}
-            </p>
-          </div>
-          <button
-            onClick={() => copyText(result.subjectAndAttire, 'card-attire')}
-            className="mt-4 text-[11px] text-pink-400 hover:text-pink-300 flex items-center gap-1.5 self-start transition-colors"
-          >
-            {copiedKey === 'card-attire' ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-            <span>Copy Subject Details</span>
-          </button>
-        </div>
-
-        {/* Art Style & Medium */}
-        <div className="bg-neutral-900/70 border border-white/10 rounded-2xl p-5 hover:border-white/20 transition-all flex flex-col justify-between">
-          <div>
-            <div className="flex items-center gap-2 mb-3">
-              <div className="p-2 rounded-xl bg-purple-500/10 text-purple-400 border border-purple-500/20">
-                <Layers className="w-4 h-4" />
-              </div>
-              <h3 className="text-xs font-bold uppercase tracking-wider text-neutral-300">
-                Art Style & Medium (আর্ট মিডিয়াম)
-              </h3>
-            </div>
-            <p className="text-xs text-neutral-400 leading-relaxed">
-              {result.artStyle}
-            </p>
-          </div>
-          <button
-            onClick={() => copyText(result.artStyle, 'card-style')}
-            className="mt-4 text-[11px] text-purple-400 hover:text-purple-300 flex items-center gap-1.5 self-start transition-colors"
-          >
-            {copiedKey === 'card-style' ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-            <span>Copy Art Style</span>
-          </button>
-        </div>
-
-        {/* Color Palette */}
-        <div className="bg-neutral-900/70 border border-white/10 rounded-2xl p-5 hover:border-white/20 transition-all flex flex-col justify-between">
-          <div>
-            <div className="flex items-center gap-2 mb-3">
-              <div className="p-2 rounded-xl bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">
-                <Palette className="w-4 h-4" />
-              </div>
-              <h3 className="text-xs font-bold uppercase tracking-wider text-neutral-300">
-                Color Palette (রঙের প্যালেট)
-              </h3>
-            </div>
-            <p className="text-xs text-neutral-400 leading-relaxed mb-3">
-              {result.colorDescription}
-            </p>
-            {result.colorPalette && result.colorPalette.length > 0 && (
-              <div className="flex items-center gap-2">
-                {result.colorPalette.map((hex, i) => (
-                  <button
-                    key={i}
-                    onClick={() => copyText(hex, `hex-${i}`)}
-                    className="group relative flex-1 h-9 rounded-lg border border-white/20 transition-transform hover:scale-105"
-                    style={{ backgroundColor: hex }}
-                    title={`Click to copy ${hex}`}
-                  >
-                    <span className="absolute -top-7 left-1/2 -translate-x-1/2 bg-black/90 text-[10px] text-white px-1.5 py-0.5 rounded opacity-0 group-hover:opacity-100 transition-opacity font-mono pointer-events-none whitespace-nowrap">
-                      {hex}
-                    </span>
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-          <button
-            onClick={() => copyText(result.colorPalette.join(', '), 'card-palette')}
-            className="mt-4 text-[11px] text-cyan-400 hover:text-cyan-300 flex items-center gap-1.5 self-start transition-colors"
-          >
-            {copiedKey === 'card-palette' ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-            <span>Copy Hex Codes</span>
-          </button>
-        </div>
-
-        {/* Negative Prompt (Anti-CGI) */}
-        <div className="bg-neutral-900/70 border border-red-500/20 rounded-2xl p-5 hover:border-red-500/40 transition-all flex flex-col justify-between">
-          <div>
-            <div className="flex items-center gap-2 mb-3">
-              <div className="p-2 rounded-xl bg-red-500/10 text-red-400 border border-red-500/20">
-                <ShieldAlert className="w-4 h-4" />
-              </div>
-              <h3 className="text-xs font-bold uppercase tracking-wider text-red-300">
-                Anti-CGI Negative Prompt (যা পরিহার করবেন)
-              </h3>
-            </div>
-            <p className="text-xs text-neutral-400 font-mono leading-relaxed">
-              {result.negativePrompt}
-            </p>
-          </div>
-          <button
-            onClick={() => copyText(result.negativePrompt, 'card-neg')}
-            className="mt-4 text-[11px] text-red-400 hover:text-red-300 flex items-center gap-1.5 self-start transition-colors"
-          >
-            {copiedKey === 'card-neg' ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-            <span>Copy Negative Prompt</span>
+            <RefreshCw className="w-3.5 h-3.5" />
+            <span>নতুন ছবি</span>
           </button>
         </div>
       </div>
+
+      {/* Main Prompt Card */}
+      <motion.div 
+        initial={{ opacity: 0, y: 15 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="relative bg-gradient-to-b from-[#16122d]/95 to-[#0e0b1c]/95 border border-purple-500/30 rounded-3xl p-5 sm:p-8 backdrop-blur-2xl shadow-[0_15px_50px_rgba(139,92,246,0.18)] overflow-hidden"
+      >
+        <div className="absolute top-0 right-0 w-96 h-96 bg-purple-600/10 rounded-full blur-[140px] pointer-events-none" />
+        <div className="absolute -bottom-10 -left-10 w-80 h-80 bg-indigo-600/10 rounded-full blur-[120px] pointer-events-none" />
+
+        {/* Feature Badges inspired by NEXORA card */}
+        <div className="flex flex-wrap items-center gap-2 mb-4">
+          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-semibold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
+            <CheckCircle2 className="w-3.5 h-3.5" />
+            <span>১০০% বাস্তবসম্মত ব্যাকগ্রাউন্ড (Real-World DNA)</span>
+          </div>
+
+          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-semibold bg-purple-500/15 text-purple-300 border border-purple-500/30">
+            <Camera className="w-3.5 h-3.5" />
+            <span>ডিএসএলআর ক্যামেরা ও লেন্স স্পেক্স</span>
+          </div>
+
+          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-semibold bg-pink-500/15 text-pink-300 border border-pink-500/30">
+            <Sun className="w-3.5 h-3.5" />
+            <span>আলোর উৎস ও গতিপথ (Light Trajectory)</span>
+          </div>
+        </div>
+
+        {/* Navigation Tabs */}
+        <div className="flex flex-wrap items-center gap-2 mb-4 pb-3 border-b border-purple-500/20">
+          {[
+            { id: 'master', label: '🌟 মাস্টার প্রম্পট (Exact Replica)' },
+            { id: 'forensic', label: '🔬 ফরেনসিক গ্রাফিক্স ও লাইট DNA' },
+            { id: 'midjourney', label: '🎨 মিডজার্নি v6.1' },
+            { id: 'short', label: '⚡ শর্ট প্রম্পট (Fast)' },
+            { id: 'swap', label: '👥 ক্যারেক্টার সোয়াপ' },
+            { id: 'style', label: '🪄 স্টাইল ট্রান্সফার' },
+          ].map((tab) => (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id as any)}
+              className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                activeTab === tab.id
+                  ? 'bg-purple-600 text-white shadow-md shadow-purple-600/30'
+                  : 'bg-black/30 text-purple-200/80 hover:bg-black/50 hover:text-white border border-purple-500/15'
+              }`}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+
+        {/* Midjourney Aspect Ratio Selector */}
+        {activeTab === 'midjourney' && (
+          <div className="mb-4 p-3 rounded-2xl bg-black/40 border border-purple-500/20 flex items-center justify-between flex-wrap gap-2">
+            <span className="text-xs text-purple-200 font-semibold">অ্যাসপেক্ট রেশিও (Aspect Ratio):</span>
+            <div className="flex items-center gap-1.5">
+              {(['16:9', '9:16', '1:1', '4:5'] as const).map((ratio) => (
+                <button
+                  key={ratio}
+                  onClick={() => setAspectRatio(ratio)}
+                  className={`px-3 py-1 rounded-lg text-xs font-mono font-bold transition-all cursor-pointer ${
+                    aspectRatio === ratio
+                      ? 'bg-purple-600 text-white'
+                      : 'bg-white/5 text-neutral-300 hover:bg-white/10'
+                  }`}
+                >
+                  --ar {ratio}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Active Prompt Box or Forensic View */}
+        {activeTab === 'forensic' ? (
+          <GraphicDeconstructionCard
+            result={result}
+            onApplyCustomization={onApplyCustomization}
+          />
+        ) : (
+          <div className="relative group">
+            <div className="p-4 sm:p-5 rounded-2xl bg-black/50 border border-purple-500/30 font-mono text-xs sm:text-sm text-purple-100/90 leading-relaxed max-h-[360px] overflow-y-auto selection:bg-purple-600 shadow-inner">
+              {getActivePrompt()}
+            </div>
+
+            {/* Quick Actions Bar */}
+            <div className="flex items-center justify-between flex-wrap gap-2 mt-4">
+              <span className="text-[11px] text-purple-300/70">
+                এই প্রম্পটটি Midjourney, Flux.1, SDXL বা DALL-E 3 তে সরাসরি পেস্ট করুন
+              </span>
+
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => copyText(getActivePrompt(), 'active-prompt')}
+                  className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white text-xs sm:text-sm font-bold shadow-lg shadow-purple-600/30 transition-all cursor-pointer"
+                >
+                  {copiedKey === 'active-prompt' ? <Check className="w-4 h-4 text-emerald-300" /> : <Copy className="w-4 h-4" />}
+                  <span>{copiedKey === 'active-prompt' ? 'কপি সম্পন্ন!' : '১-ক্লিকে কপি করুন'}</span>
+                </button>
+
+                <button
+                  onClick={downloadPromptTxt}
+                  className="p-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-neutral-300 hover:text-white transition-colors cursor-pointer"
+                  title="সম্পূর্ণ রিপোর্ট ডাউনলোড করুন (.txt)"
+                >
+                  <Download className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+      </motion.div>
+
+      {/* Forensic Graphic DNA Accordion if not currently in forensic tab */}
+      {activeTab !== 'forensic' && (
+        <GraphicDeconstructionCard
+          result={result}
+          onApplyCustomization={onApplyCustomization}
+        />
+      )}
+
+      {/* Optical & Photography Details Grid */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {/* Camera and Optics */}
+        <div className="p-4 sm:p-5 rounded-3xl bg-[#120f22] border border-purple-500/20 space-y-3">
+          <div className="flex items-center gap-2 text-xs font-bold text-purple-300">
+            <Camera className="w-4 h-4 text-purple-400" />
+            <span>ক্যামেরা অপটিক্স ও কম্পোজিশন (DSLR Gear):</span>
+          </div>
+          <p className="text-xs text-neutral-300 leading-relaxed">
+            {result.cameraAndComposition}
+          </p>
+        </div>
+
+        {/* Character, Attire & Interaction */}
+        <div className="p-4 sm:p-5 rounded-3xl bg-[#120f22] border border-purple-500/20 space-y-3">
+          <div className="flex items-center gap-2 text-xs font-bold text-pink-300">
+            <User className="w-4 h-4 text-pink-400" />
+            <span>চরিত্রের ভঙ্গিমা ও পোশাকের বিবরণ (Subject & Attire):</span>
+          </div>
+          <p className="text-xs text-neutral-300 leading-relaxed">
+            {result.subjectAndAttire}
+          </p>
+        </div>
+      </div>
+
+      {/* Color Palette & Atmosphere */}
+      <div className="p-4 sm:p-5 rounded-3xl bg-[#120f22] border border-purple-500/20 space-y-4">
+        <div className="flex items-center justify-between flex-wrap gap-2">
+          <div className="flex items-center gap-2 text-xs font-bold text-purple-300">
+            <Palette className="w-4 h-4 text-pink-400" />
+            <span>কালার প্যালেট ও কালার গ্রেডিং (Color DNA):</span>
+          </div>
+          <span className="text-[11px] text-purple-300/70">{result.colorDescription}</span>
+        </div>
+
+        {/* Palette Hex Chips */}
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5">
+          {result.colorPalette.map((color, i) => (
+            <button
+              key={i}
+              onClick={() => copyText(color, `hex-${i}`)}
+              className="p-2.5 rounded-2xl bg-black/40 border border-purple-500/20 flex items-center gap-2.5 hover:border-purple-400 transition-all cursor-pointer group"
+            >
+              <div 
+                className="w-7 h-7 rounded-xl shadow-inner border border-white/20 shrink-0"
+                style={{ backgroundColor: color }}
+              />
+              <div className="text-left">
+                <span className="font-mono text-xs font-bold text-white block group-hover:text-purple-300">
+                  {color}
+                </span>
+                <span className="text-[10px] text-neutral-400">
+                  {copiedKey === `hex-${i}` ? 'কপি!' : 'কপি করুন'}
+                </span>
+              </div>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Negative Prompt & Suggested Tags */}
+      <div className="p-4 sm:p-5 rounded-3xl bg-[#120f22] border border-purple-500/20 space-y-3">
+        <div className="flex items-center justify-between flex-wrap gap-2">
+          <div className="flex items-center gap-2 text-xs font-bold text-rose-300">
+            <ShieldAlert className="w-4 h-4 text-rose-400" />
+            <span>নেগেটিভ প্রম্পট (Anti-CGI / Anti-Slop Filter):</span>
+          </div>
+          <button
+            onClick={() => copyText(result.negativePrompt, 'neg')}
+            className="text-xs text-purple-300 hover:text-white flex items-center gap-1 font-semibold cursor-pointer"
+          >
+            {copiedKey === 'neg' ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+            <span>কপি নেগেটিভ</span>
+          </button>
+        </div>
+        <p className="text-xs text-neutral-400 font-mono bg-black/40 p-3 rounded-xl border border-white/5">
+          {result.negativePrompt}
+        </p>
+
+        {/* Tags */}
+        <div className="pt-2 flex flex-wrap gap-1.5">
+          {result.suggestedTags.map((tag, i) => (
+            <span
+              key={i}
+              className="px-2.5 py-1 rounded-lg text-xs bg-purple-950/40 text-purple-300 border border-purple-500/20 font-medium"
+            >
+              #{tag}
+            </span>
+          ))}
+        </div>
+      </div>
+
+      {/* Share Modal Dialog */}
+      <ShareModal
+        isOpen={isShareOpen}
+        onClose={() => setIsShareOpen(false)}
+        result={result}
+        imageUrl={imageUrl}
+      />
     </div>
   );
 };

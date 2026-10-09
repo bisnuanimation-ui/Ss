@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   Sparkles, 
@@ -10,17 +10,28 @@ import {
   AlertCircle,
   X,
   Clock,
-  ArrowRight
+  ArrowRight,
+  Key,
+  Zap,
+  Share2,
+  RefreshCw,
+  Layers,
+  Palette
 } from 'lucide-react';
 import Header from './components/Header';
 import ImagePreview from './components/ImagePreview';
 import ResultsView from './components/ResultsView';
-import { analyzeImage } from './services/geminiService';
-import { AppState, AnalysisResult } from './types';
+import ApiManagerModal from './components/ApiManagerModal';
+import MobileNav from './components/MobileNav';
+import { analyzeWithMultiApi } from './services/visionAnalyzer';
+import { apiManager } from './services/apiManager';
+import { loadSharedAnalysis } from './services/shareService';
+import { AppState, AnalysisResult, GraphicCustomization } from './types';
 import { useFirebase } from './components/FirebaseProvider';
 
-const App: React.FC = () => {
+export const App: React.FC = () => {
   const { user, history, signIn, logout, saveAnalysis, clearHistory } = useFirebase();
+  
   const [state, setState] = useState<AppState>({
     image: null,
     imageMimeType: null,
@@ -29,15 +40,71 @@ const App: React.FC = () => {
     error: null,
   });
 
+  // UI state
+  const [mobileTab, setMobileTab] = useState<'scanner' | 'studio' | 'history'>('scanner');
+  const [isApiModalOpen, setIsApiModalOpen] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
   const [showGuide, setShowGuide] = useState(false);
+  const [fastMode, setFastMode] = useState(true);
+
+  // Modifiers
+  const [customAttire, setCustomAttire] = useState('');
+  const [customHeadline, setCustomHeadline] = useState('');
+  const [statusMessage, setStatusMessage] = useState('');
+
+  // Key rotation alert toast
+  const [rotationToast, setRotationToast] = useState<{
+    show: boolean;
+    fromName: string;
+    toName: string;
+    reason: string;
+  } | null>(null);
+
+  // Listen for automatic key rotation / failover
+  useEffect(() => {
+    const unsubscribe = apiManager.onKeyRotated(({ fromKey, toKey, reason }) => {
+      setRotationToast({
+        show: true,
+        fromName: fromKey.name,
+        toName: toKey.name,
+        reason,
+      });
+
+      setTimeout(() => {
+        setRotationToast(null);
+      }, 6000);
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+  // Check for shared link in URL on initial mount (?share=<id> or ?share_data=<payload>)
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const shareId = params.get('share');
+    const shareData = params.get('share_data');
+
+    if (shareId || shareData) {
+      loadSharedAnalysis(shareId, shareData).then((sharedResult) => {
+        if (sharedResult) {
+          setState({
+            image: null,
+            imageMimeType: null,
+            isAnalyzing: false,
+            result: sharedResult,
+            error: null,
+          });
+        }
+      });
+    }
+  }, []);
 
   const handleFileUpload = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
     if (!file.type.startsWith('image/')) {
-      setState(prev => ({ ...prev, error: 'অনুগ্রহ করে একটি সঠিক ছবির ফাইল নির্বাচন করুন (Please select a valid image).' }));
+      setState(prev => ({ ...prev, error: 'অনুগ্রহ করে একটি সঠিক ছবির ফাইল নির্বাচন করুন (Select a valid image).' }));
       return;
     }
 
@@ -80,28 +147,31 @@ const App: React.FC = () => {
     if (!state.image || !state.imageMimeType) return;
 
     setState(prev => ({ ...prev, isAnalyzing: true, error: null }));
+    setStatusMessage('ছবি বিশ্লেষণ শুরু হচ্ছে...');
 
     try {
-      const result = await analyzeImage(state.image, state.imageMimeType);
+      const result = await analyzeWithMultiApi(state.image, state.imageMimeType, {
+        fastMode,
+        customAttire: customAttire.trim() || undefined,
+        customHeadline: customHeadline.trim() || undefined,
+        onStatusUpdate: (msg) => setStatusMessage(msg),
+      });
+
       setState(prev => ({ ...prev, result, isAnalyzing: false }));
+      setStatusMessage('');
 
       // Save to recent history
       await saveAnalysis(result, state.image);
     } catch (err: any) {
-      console.error("Analysis execution failed:", err);
-      let errorMessage = 'ছবি বিশ্লেষণ ব্যর্থ হয়েছে। অনুগ্রহ করে আবার চেষ্টা করুন (Analysis failed. Please try again).';
-
-      if (err.message?.includes('QUOTA_EXCEEDED') || err.message?.includes('RESOURCE_EXHAUSTED') || err.status === 429) {
-        errorMessage = 'কোটা শেষ হয়েছে (Quota Exceeded): অনুগ্রহ করে কিছুক্ষণ অপেক্ষা করে আবার চেষ্টা করুন।';
-      } else if (err.message?.includes('API_KEY_INVALID')) {
-        errorMessage = 'API Key ত্রুটি: Gemini API সংযোগ যাচাই করুন।';
-      }
+      console.error('Multi-API Analysis execution failed:', err);
+      const errMsg = err?.message || 'ছবি বিশ্লেষণ ব্যর্থ হয়েছে। অনুগ্রহ করে API Key যাচাই করুন।';
 
       setState(prev => ({
         ...prev,
         isAnalyzing: false,
-        error: errorMessage,
+        error: errMsg,
       }));
+      setStatusMessage('');
     }
   };
 
@@ -114,37 +184,77 @@ const App: React.FC = () => {
       error: null,
     });
     setShowHistory(false);
+    setMobileTab('scanner');
+  };
+
+  const handleApplyCustomization = (customization: GraphicCustomization) => {
+    if (state.result) {
+      setState(prev => ({
+        ...prev,
+        result: prev.result ? {
+          ...prev.result,
+          customization,
+          masterPrompt: customization.modifiedMasterPrompt || prev.result.masterPrompt,
+        } : null,
+      }));
+    }
   };
 
   const isReady = !!state.image && !state.isAnalyzing;
 
   return (
-    <div className="min-h-screen bg-[#070709] text-neutral-100 flex flex-col font-sans selection:bg-blue-500/30">
-      {/* Top Navbar */}
-      <nav className="w-full border-b border-white/10 bg-black/50 backdrop-blur-xl px-6 py-4 sticky top-0 z-50">
+    <div className="min-h-screen bg-[#090712] text-neutral-100 flex flex-col font-sans selection:bg-purple-600/40 pb-16 sm:pb-0">
+      {/* Top Mobile Bar */}
+      <MobileNav
+        activeTab={mobileTab}
+        onTabChange={(tab) => {
+          setMobileTab(tab);
+          if (tab === 'history') setShowHistory(true);
+        }}
+        onOpenApiManager={() => setIsApiModalOpen(true)}
+        hasResult={!!state.result}
+      />
+
+      {/* Top Desktop Navbar */}
+      <nav className="w-full border-b border-purple-500/15 bg-[#0d0a1a]/80 backdrop-blur-xl px-4 sm:px-6 py-3.5 sticky top-0 z-40">
         <div className="max-w-6xl mx-auto flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-500 flex items-center justify-center shadow-lg shadow-blue-500/20">
+            <div className="w-9 h-9 rounded-2xl bg-gradient-to-tr from-purple-600 via-violet-600 to-indigo-500 flex items-center justify-center shadow-lg shadow-purple-600/30">
               <Sparkles className="w-4 h-4 text-white" />
             </div>
-            <span className="font-extrabold text-base tracking-tight text-white">
-              PromptVision <span className="text-blue-400">AI</span>
-            </span>
+            <div>
+              <span className="font-black text-base sm:text-lg tracking-tight text-white flex items-center gap-1.5">
+                PromptVision <span className="text-purple-400">AI</span>
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-300 font-semibold border border-purple-500/30 hidden sm:inline">
+                  MULTI-API ROTATION
+                </span>
+              </span>
+            </div>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 sm:gap-3">
+            {/* API Manager Button */}
+            <button
+              onClick={() => setIsApiModalOpen(true)}
+              className="px-3 sm:px-3.5 py-1.5 rounded-xl bg-purple-600/20 hover:bg-purple-600/30 border border-purple-500/30 text-xs text-purple-200 hover:text-white transition-all flex items-center gap-1.5 cursor-pointer shadow-sm"
+            >
+              <Key className="w-3.5 h-3.5 text-amber-400" />
+              <span className="hidden sm:inline">API রোটেশন কী</span>
+              <span className="sm:hidden">এপিআই</span>
+            </button>
+
             <button
               onClick={() => setShowGuide(true)}
-              className="px-3.5 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-xs text-neutral-300 hover:text-white transition-all flex items-center gap-1.5"
+              className="px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-xs text-neutral-300 hover:text-white transition-all hidden sm:flex items-center gap-1.5 cursor-pointer"
             >
-              <HelpCircle className="w-3.5 h-3.5 text-blue-400" />
-              <span>ব্যবহার সহায়িকা (Guide)</span>
+              <HelpCircle className="w-3.5 h-3.5 text-purple-400" />
+              <span>সহায়িকা</span>
             </button>
 
             {history.length > 0 && (
               <button
                 onClick={() => setShowHistory(true)}
-                className="px-3.5 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-xs text-neutral-300 hover:text-white transition-all flex items-center gap-1.5"
+                className="px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-xs text-neutral-300 hover:text-white transition-all flex items-center gap-1.5 cursor-pointer"
               >
                 <Clock className="w-3.5 h-3.5 text-purple-400" />
                 <span>হিস্ট্রি ({history.length})</span>
@@ -154,15 +264,15 @@ const App: React.FC = () => {
             {user ? (
               <div className="flex items-center gap-2 pl-2 border-l border-white/10">
                 {user.photoURL && (
-                  <img src={user.photoURL} alt="" className="w-7 h-7 rounded-full border border-white/20" />
+                  <img src={user.photoURL} alt="" className="w-7 h-7 rounded-full border border-purple-500/30" />
                 )}
-                <span className="text-xs text-neutral-300 hidden sm:inline max-w-[100px] truncate">
+                <span className="text-xs text-neutral-300 hidden md:inline max-w-[90px] truncate">
                   {user.displayName}
                 </span>
                 <button
                   onClick={logout}
                   title="Logout"
-                  className="p-1.5 rounded-lg text-neutral-400 hover:text-red-400 hover:bg-white/5 transition-colors"
+                  className="p-1.5 rounded-lg text-neutral-400 hover:text-rose-400 hover:bg-white/5 transition-colors cursor-pointer"
                 >
                   <LogOut className="w-3.5 h-3.5" />
                 </button>
@@ -170,78 +280,109 @@ const App: React.FC = () => {
             ) : (
               <button
                 onClick={signIn}
-                className="px-3.5 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-xs text-white font-medium transition-all flex items-center gap-1.5"
+                className="px-3 py-1.5 rounded-xl bg-purple-600/30 hover:bg-purple-600 text-xs text-purple-200 hover:text-white font-medium border border-purple-500/30 transition-all flex items-center gap-1.5 cursor-pointer"
               >
                 <LogIn className="w-3.5 h-3.5" />
-                <span>Google Sign In</span>
+                <span>লগইন</span>
               </button>
             )}
           </div>
         </div>
       </nav>
 
-      {/* Main Container */}
-      <main className="flex-1 max-w-6xl w-full mx-auto px-4 md:px-6 py-8">
-        {!state.result && <Header />}
+      {/* Floating Failover Alert Toast */}
+      <AnimatePresence>
+        {rotationToast && (
+          <motion.div
+            initial={{ opacity: 0, y: -20, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -20, scale: 0.95 }}
+            className="fixed top-20 left-1/2 -translate-x-1/2 z-50 max-w-md w-[92%] p-3.5 rounded-2xl bg-amber-950/95 border border-amber-500/40 text-amber-200 shadow-[0_10px_35px_rgba(245,158,11,0.25)] backdrop-blur-xl flex items-center justify-between gap-3 text-xs"
+          >
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center shrink-0">
+                <Zap className="w-4 h-4" />
+              </div>
+              <div>
+                <strong className="font-bold text-white block">
+                  অটো-সুইচ সম্পন্ন: {rotationToast.toName}
+                </strong>
+                <p className="text-[11px] text-amber-300/80">
+                  {rotationToast.fromName}-এর {rotationToast.reason} হওয়ায় পরবর্তী সক্রিয় কী-তে সুইচ করা হয়েছে।
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={() => setRotationToast(null)}
+              className="text-amber-400 hover:text-white p-1"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
-        {/* Upload & Action Area */}
+      {/* Main App Container */}
+      <main className="flex-1 max-w-6xl w-full mx-auto px-4 sm:px-6 py-6 sm:py-8">
         {!state.result && (
-          <section className="mt-4 mb-12">
+          <Header
+            onOpenApiManager={() => setIsApiModalOpen(true)}
+            fastMode={fastMode}
+            onToggleFastMode={() => setFastMode(!fastMode)}
+          />
+        )}
+
+        {/* Upload & Scanner Screen */}
+        {!state.result && (
+          <section className="mt-4 mb-10">
             <ImagePreview
               image={state.image}
               onUpload={handleFileUpload}
               onSelectSample={handleSelectSample}
               onRemove={handleRemove}
               isAnalyzing={state.isAnalyzing}
+              onStartAnalyze={handleAnalyze}
+              customAttire={customAttire}
+              setCustomAttire={setCustomAttire}
+              customHeadline={customHeadline}
+              setCustomHeadline={setCustomHeadline}
+              fastMode={fastMode}
+              setFastMode={setFastMode}
             />
 
-            <div className="flex flex-col items-center gap-4 mt-6">
-              <motion.button
-                whileHover={isReady ? { scale: 1.02 } : {}}
-                whileTap={isReady ? { scale: 0.98 } : {}}
-                onClick={handleAnalyze}
-                disabled={!isReady}
-                className={`relative px-10 py-4 rounded-2xl font-bold text-xs uppercase tracking-[0.2em] transition-all flex items-center gap-3 shadow-2xl ${
-                  isReady
-                    ? 'bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 text-white hover:brightness-110 shadow-blue-500/25 cursor-pointer ring-1 ring-white/20'
-                    : 'bg-white/5 text-neutral-500 border border-white/10 cursor-not-allowed'
-                }`}
-              >
-                {state.isAnalyzing ? (
-                  <>
-                    <div className="flex items-center gap-1.5">
-                      <div className="w-1.5 h-1.5 bg-white rounded-full animate-bounce [animation-delay:-0.3s]" />
-                      <div className="w-1.5 h-1.5 bg-white rounded-full animate-bounce [animation-delay:-0.15s]" />
-                      <div className="w-1.5 h-1.5 bg-white rounded-full animate-bounce" />
-                    </div>
-                    <span>ছবি বিশ্লেষণ হচ্ছে... (Extracting Prompts)</span>
-                  </>
-                ) : (
-                  <>
-                    <Wand2 className="w-4 h-4" />
-                    <span>প্রম্পট তৈরি করুন (Generate AI Prompt)</span>
-                  </>
-                )}
-              </motion.button>
+            {/* In-flight status indicator */}
+            {state.isAnalyzing && statusMessage && (
+              <div className="mt-3 text-center text-xs text-purple-300 animate-pulse font-medium">
+                {statusMessage}
+              </div>
+            )}
 
-              {state.error && (
-                <div className="mt-2 flex items-center gap-2 p-4 rounded-xl bg-red-500/10 border border-red-500/30 text-red-400 text-xs max-w-lg text-center">
-                  <AlertCircle className="w-4 h-4 shrink-0" />
-                  <span>{state.error}</span>
+            {/* Error Message */}
+            {state.error && (
+              <div className="mt-4 flex items-center gap-2.5 p-4 rounded-2xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs max-w-lg mx-auto text-left shadow-lg">
+                <AlertCircle className="w-4 h-4 shrink-0 text-rose-400" />
+                <div className="flex-1">
+                  <span className="font-semibold block">{state.error}</span>
+                  <button
+                    onClick={() => setIsApiModalOpen(true)}
+                    className="text-[11px] text-purple-300 underline font-semibold mt-1 block hover:text-white cursor-pointer"
+                  >
+                    API রোটেশন ম্যানেজারে নতুন কী যুক্ত বা পরিবর্তন করুন →
+                  </button>
                 </div>
-              )}
-            </div>
+              </div>
+            )}
           </section>
         )}
 
-        {/* Results View */}
+        {/* Results Screen */}
         <AnimatePresence>
           {state.result && (
             <motion.div
-              initial={{ opacity: 0, y: 30 }}
+              initial={{ opacity: 0, y: 25 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -20 }}
-              className="mt-4"
+              className="mt-2"
             >
               <ResultsView
                 result={state.result}
@@ -255,46 +396,52 @@ const App: React.FC = () => {
                     error: null,
                   })
                 }
+                onApplyCustomization={handleApplyCustomization}
               />
             </motion.div>
           )}
         </AnimatePresence>
 
-        {/* Usage Workflow Cards */}
+        {/* Usage Workflow Cards (inspired by NEXORA features) */}
         {!state.result && (
-          <section className="mt-16 pt-12 border-t border-white/5">
-            <h3 className="text-center text-xs font-bold uppercase tracking-widest text-neutral-400 mb-8">
-              সহজ ৩ ধাপে অন্য ছবিতে প্রম্পট ব্যবহার করুন (How to use on other images)
-            </h3>
+          <section className="mt-12 pt-8 border-t border-purple-500/15">
+            <div className="text-center mb-8">
+              <span className="text-[11px] font-bold uppercase tracking-widest text-purple-400 block mb-1">
+                Forensic Workflow
+              </span>
+              <h3 className="text-lg sm:text-xl font-black text-white">
+                গ্রাফিক্স ডি-কনস্ট্রাকশন ও প্রম্পট ইঞ্জিনিয়ারিং কীভাবে কাজ করে
+              </h3>
+            </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              <div className="bg-neutral-900/40 border border-white/5 rounded-2xl p-6 text-center">
-                <div className="w-10 h-10 mx-auto rounded-xl bg-blue-500/10 text-blue-400 flex items-center justify-center mb-4 font-bold text-sm">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 sm:gap-6">
+              <div className="bg-[#120f22]/70 border border-purple-500/20 rounded-3xl p-5 sm:p-6 text-center shadow-lg">
+                <div className="w-12 h-12 mx-auto rounded-2xl bg-purple-600/20 text-purple-400 border border-purple-500/30 flex items-center justify-center mb-3 font-bold text-sm shadow-inner">
                   ১
                 </div>
-                <h4 className="text-sm font-bold text-white mb-2">ছবি আপলোড করুন</h4>
-                <p className="text-xs text-neutral-400 leading-relaxed">
-                  আপনার পছন্দের যেকোনো আর্ট, ফটো বা ডিজাইন আপলোড করুন। AI এর ক্যামেরা, লাইটিং ও পোজ স্ক্যান করবে।
+                <h4 className="text-sm font-bold text-white mb-1.5">১. লাইটিং ও লাইট পাথ এক্সট্রাকশন</h4>
+                <p className="text-xs text-purple-200/70 leading-relaxed">
+                  আলো কোথা থেকে আসছে (উৎস), কোন কোণে নামছে (ভেক্টর) এবং কোথায় হাইলাইটস বা ছায়া ফেলছে তা নিখুঁতভাবে চিহ্নিত করে।
                 </p>
               </div>
 
-              <div className="bg-neutral-900/40 border border-white/5 rounded-2xl p-6 text-center">
-                <div className="w-10 h-10 mx-auto rounded-xl bg-purple-500/10 text-purple-400 flex items-center justify-center mb-4 font-bold text-sm">
+              <div className="bg-[#120f22]/70 border border-purple-500/20 rounded-3xl p-5 sm:p-6 text-center shadow-lg">
+                <div className="w-12 h-12 mx-auto rounded-2xl bg-pink-600/20 text-pink-400 border border-pink-500/30 flex items-center justify-center mb-3 font-bold text-sm shadow-inner">
                   ২
                 </div>
-                <h4 className="text-sm font-bold text-white mb-2">প্রম্পট পান ও কাস্টমাইজ করুন</h4>
-                <p className="text-xs text-neutral-400 leading-relaxed">
-                  সম্পূর্ণ মাস্টার প্রম্পট, মিডজার্নি ফরম্যাট অথবা "Subject Swap" টেমপ্লেট বেছে নিয়ে এক ক্লিকে কপি করুন।
+                <h4 className="text-sm font-bold text-white mb-1.5">২. টেক্সচার গ্রাইন্ডিং ও গ্রাফিক্স ম্যাপিং</h4>
+                <p className="text-xs text-purple-200/70 leading-relaxed">
+                  কোথায় বেশি গ্রাইন্ডিং, ফিল্ম গ্রেইন বা গ্রাঞ্জ আছে এবং কোথায় মসৃণ ভেক্টর ক্লিন সারফেস রয়েছে তা ম্যাপ করে হুবহু রেপ্লিকা বানায়।
                 </p>
               </div>
 
-              <div className="bg-neutral-900/40 border border-white/5 rounded-2xl p-6 text-center">
-                <div className="w-10 h-10 mx-auto rounded-xl bg-emerald-500/10 text-emerald-400 flex items-center justify-center mb-4 font-bold text-sm">
+              <div className="bg-[#120f22]/70 border border-purple-500/20 rounded-3xl p-5 sm:p-6 text-center shadow-lg">
+                <div className="w-12 h-12 mx-auto rounded-2xl bg-indigo-600/20 text-indigo-400 border border-indigo-500/30 flex items-center justify-center mb-3 font-bold text-sm shadow-inner">
                   ৩
                 </div>
-                <h4 className="text-sm font-bold text-white mb-2">নতুন ছবি তৈরি করুন</h4>
-                <p className="text-xs text-neutral-400 leading-relaxed">
-                  Midjourney, Flux, Stable Diffusion বা DALL-E তে প্রম্পটটি পেস্ট করে একই কোয়ালিটি ও স্টাইলে নতুন ছবি জেনারেট করুন!
+                <h4 className="text-sm font-bold text-white mb-1.5">৩. অটো-ফেলওভার ও শেয়ার লিঙ্ক</h4>
+                <p className="text-xs text-purple-200/70 leading-relaxed">
+                  একটি এপিআই-এর লিমিট শেষ হলে সাথে সাথে পরবর্তী কী-তে অটোমেটিক সুইচ করে এবং যেকোনো ডিভাইসে দেখার জন্য শেয়ার লিঙ্ক দেয়।
                 </p>
               </div>
             </div>
@@ -302,21 +449,28 @@ const App: React.FC = () => {
         )}
       </main>
 
+      {/* API Rotation Manager Modal */}
+      <ApiManagerModal
+        isOpen={isApiModalOpen}
+        onClose={() => setIsApiModalOpen(false)}
+        onKeysChanged={() => {}}
+      />
+
       {/* History Drawer Modal */}
       {showHistory && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-neutral-900 border border-white/10 rounded-3xl max-w-xl w-full max-h-[80vh] flex flex-col shadow-2xl overflow-hidden">
-            <div className="p-5 border-b border-white/10 flex items-center justify-between">
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-3 sm:p-4">
+          <div className="bg-[#100d1e] border border-purple-500/30 rounded-3xl max-w-xl w-full max-h-[80vh] flex flex-col shadow-2xl overflow-hidden">
+            <div className="p-4 sm:p-5 border-b border-purple-500/20 flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <Clock className="w-4 h-4 text-purple-400" />
-                <h3 className="font-bold text-sm text-white">পূর্বের তৈরি প্রম্পট হিস্ট্রি (History)</h3>
+                <h3 className="font-bold text-sm text-white">পূর্বের তৈরি প্রম্পট হিস্ট্রি ({history.length})</h3>
               </div>
               <div className="flex items-center gap-2">
                 <button
                   onClick={clearHistory}
-                  className="text-xs text-red-400 hover:text-red-300 font-medium px-2 py-1"
+                  className="text-xs text-rose-400 hover:text-rose-300 font-semibold px-2 py-1"
                 >
-                  Clear All
+                  সব মুছুন
                 </button>
                 <button
                   onClick={() => setShowHistory(false)}
@@ -332,30 +486,30 @@ const App: React.FC = () => {
                 <div
                   key={item.id}
                   onClick={() => handleSelectHistoryItem(item.result, item.imageThumbnail)}
-                  className="p-3 rounded-2xl bg-white/5 hover:bg-white/10 border border-white/5 hover:border-white/15 cursor-pointer transition-all flex items-center gap-4 group"
+                  className="p-3.5 rounded-2xl bg-black/40 hover:bg-purple-900/20 border border-purple-500/15 hover:border-purple-500/40 cursor-pointer transition-all flex items-center gap-4 group"
                 >
                   {item.imageThumbnail ? (
                     <img
                       src={item.imageThumbnail}
                       alt=""
-                      className="w-14 h-14 rounded-xl object-cover border border-white/10 shrink-0"
+                      className="w-14 h-14 rounded-xl object-cover border border-purple-500/20 shrink-0"
                     />
                   ) : (
-                    <div className="w-14 h-14 rounded-xl bg-neutral-800 border border-white/10 flex items-center justify-center shrink-0">
-                      <Sparkles className="w-5 h-5 text-neutral-500" />
+                    <div className="w-14 h-14 rounded-xl bg-purple-950/30 border border-purple-500/20 flex items-center justify-center shrink-0">
+                      <Sparkles className="w-5 h-5 text-purple-400" />
                     </div>
                   )}
 
                   <div className="flex-1 min-w-0">
-                    <p className="text-xs text-neutral-200 line-clamp-2 font-mono leading-relaxed">
+                    <p className="text-xs text-purple-100 line-clamp-2 font-mono leading-relaxed">
                       {item.result.masterPrompt}
                     </p>
-                    <span className="text-[10px] text-neutral-500 mt-1 block">
-                      {new Date(item.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} • Click to view
+                    <span className="text-[10px] text-purple-300/60 mt-1 block">
+                      {new Date(item.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} • ক্লিক করে ওপেন করুন
                     </span>
                   </div>
 
-                  <ArrowRight className="w-4 h-4 text-neutral-500 group-hover:text-white transition-colors shrink-0" />
+                  <ArrowRight className="w-4 h-4 text-purple-400 group-hover:text-white transition-colors shrink-0" />
                 </div>
               ))}
             </div>
@@ -365,56 +519,51 @@ const App: React.FC = () => {
 
       {/* Guide Modal */}
       {showGuide && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-neutral-900 border border-white/10 rounded-3xl max-w-lg w-full p-6 shadow-2xl">
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-3 sm:p-4">
+          <div className="bg-[#100d1e] border border-purple-500/30 rounded-3xl max-w-lg w-full p-5 sm:p-6 shadow-2xl">
             <div className="flex items-center justify-between mb-4">
               <h3 className="font-bold text-base text-white flex items-center gap-2">
-                <HelpCircle className="w-5 h-5 text-blue-400" />
-                <span>কীভাবে প্রম্পট ব্যবহার করবেন? (User Guide)</span>
+                <HelpCircle className="w-5 h-5 text-purple-400" />
+                <span>কীভাবে ব্যবহার করবেন? (User Guide)</span>
               </h3>
               <button
                 onClick={() => setShowGuide(false)}
-                className="p-1.5 rounded-lg text-neutral-400 hover:text-white"
+                className="p-1.5 rounded-lg text-neutral-400 hover:text-white cursor-pointer"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
-            <div className="space-y-4 text-xs text-neutral-300 leading-relaxed">
-              <div className="p-3.5 rounded-xl bg-white/5 border border-white/5">
-                <strong className="text-blue-400 block mb-1">১. Master Prompt (মাস্টার প্রম্পট):</strong>
-                পুরো ছবিটি যেভাবে তৈরি করা হয়েছে (বিষয়, আলো, ব্যাকগ্রাউন্ড, ৮৫মিমি লেন্স, টেক্সচার) হুবহু নকল বা নতুনভাবে বানাতে এটি ব্যবহার করুন।
+            <div className="space-y-3 text-xs text-purple-200/80 leading-relaxed">
+              <div className="p-3 rounded-2xl bg-purple-950/20 border border-purple-500/15">
+                <strong className="text-purple-300 block mb-1">১. মাল্টি-এপিআই অটো-রোটেশন:</strong>
+                একাধিক API Key সেট করে রাখতে পারেন (Gemini, Friendli AI, OpenAI)। একটির রেট লিমিট শেষ হলে অন্যটি নিজে থেকেই কাজ করবে।
               </div>
 
-              <div className="p-3.5 rounded-xl bg-white/5 border border-white/5">
-                <strong className="text-purple-400 block mb-1">২. Subject Swap (অন্য চরিত্র বসাতে):</strong>
-                এই অপশনে মূল পোজ এবং ব্যাকগ্রাউন্ড ঠিক থাকবে, শুধু <code>[Insert Subject / Character Here]</code> লেখাটি বদলে আপনার কাঙ্ক্ষিত চরিত্র (যেমন: "a futuristic astronaut" বা "a cybernetic tiger") বসিয়ে দিন।
+              <div className="p-3 rounded-2xl bg-purple-950/20 border border-purple-500/15">
+                <strong className="text-pink-300 block mb-1">২. গ্রাফিক্স ও লাইট ট্র্যাজেক্টরি:</strong>
+                আলো কোথা থেকে আসছে, কোথায় পড়ছে এবং ডিজাইনের কোথায় বেশি গ্রাইন্ডিং/গ্রাঞ্জ আছে তা পুঙ্খানুপুঙ্খভাবে বের করে দেয়।
               </div>
 
-              <div className="p-3.5 rounded-xl bg-white/5 border border-white/5">
-                <strong className="text-indigo-400 block mb-1">৩. Style Transfer (আর্ট স্টাইল রিইউজ):</strong>
-                কোনো নির্দিষ্ট মানুষ বা চরিত্র ছাড়াই ছবির আর্ট স্টাইল ও লাইটিং অন্য যেকোনো আইডিয়ার সাথে যোগ করতে পারেন।
-              </div>
-
-              <div className="p-3.5 rounded-xl bg-white/5 border border-white/5">
-                <strong className="text-emerald-400 block mb-1">৪. Midjourney v6 Format:</strong>
-                সরাসরি মিডজার্নি ডিসকর্ডে পেস্ট করার জন্য <code>--ar 16:9 --v 6.1 --style raw</code> ট্যাগ যুক্ত করে দেয়।
+              <div className="p-3 rounded-2xl bg-purple-950/20 border border-purple-500/15">
+                <strong className="text-emerald-300 block mb-1">৩. শেয়ার লিঙ্ক (Share Link):</strong>
+                যেকোনো প্রম্পটের ওপর "শেয়ার লিঙ্ক" বাটনে ক্লিক করে সরাসরি মোবাইল বা বন্ধুদের শেয়ার করতে পারেন।
               </div>
             </div>
 
             <button
               onClick={() => setShowGuide(false)}
-              className="w-full mt-6 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-medium text-xs transition-colors"
+              className="w-full mt-5 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs transition-colors cursor-pointer"
             >
-              বুঝেছি (Got it)
+              বুঝেছি
             </button>
           </div>
         </div>
       )}
 
       {/* Footer */}
-      <footer className="mt-auto py-6 border-t border-white/5 text-center text-[11px] text-neutral-600">
-        PromptVision AI • Reverse Image Prompt Engineering for Midjourney, Flux, SDXL & DALL-E
+      <footer className="mt-auto py-5 border-t border-purple-500/15 text-center text-[11px] text-purple-300/50">
+        PromptVision AI • Forensic Image & Graphic Prompt Engineering Engine
       </footer>
     </div>
   );

@@ -41,5 +41,13 @@ service cloud.firestore {
         allow delete: if isOwner(uid);
       }
     }
+
+    // Public Shared Analyses
+    match /sharedAnalyses/{shareId} {
+      allow get: if true;
+      allow list: if false;
+      allow create: if request.resource.data.masterPrompt is string && request.resource.data.masterPrompt.size() <= 10000;
+      allow update, delete: if false;
+    }
   }
 }

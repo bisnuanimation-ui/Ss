@@ -36,6 +36,18 @@
         "createdAt": { "type": "string", "format": "date-time" }
       },
       "required": ["uid", "masterPrompt", "createdAt"]
+    },
+    "SharedAnalysis": {
+      "title": "SharedAnalysis",
+      "description": "A shareable prompt analysis result.",
+      "type": "object",
+      "properties": {
+        "masterPrompt": { "type": "string", "maxLength": 10000 },
+        "shortPrompt": { "type": "string", "maxLength": 3000 },
+        "graphicDesignDetails": { "type": "string", "maxLength": 5000 },
+        "createdAt": { "type": "integer" }
+      },
+      "required": ["masterPrompt"]
     }
   },
   "firestore": {
@@ -50,6 +62,10 @@
     "/users/{uid}/analyses/{analysisId}": {
       "schema": { "$ref": "Analysis" },
       "description": "User image analyses."
+    },
+    "/sharedAnalyses/{shareId}": {
+      "schema": { "$ref": "SharedAnalysis" },
+      "description": "Public shareable analyses."
     }
   }
 }
